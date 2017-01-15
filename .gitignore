@@ -92,3 +92,8 @@ ENV/
 .DS_Store
 
 # project specific
+work/
+corpora/
+*.arpa
+*.zip
+NotoSansCJKsc-hinted/

@@ -4,7 +4,11 @@
 from PIL import Image, ImageFont, ImageDraw
 import numpy as np
 
-def render(text, font):
+_default_font = ImageFont.truetype('NotoSansCJKsc-hinted/NotoSansCJKsc-Regular.otf', 24)
+
+def render_text(text, font=None):
+    if font == None:
+        font = _default_font
     mask = font.getmask(text)
     size = mask.size[::-1]
     a = np.asarray(mask).reshape(size)
@@ -20,10 +24,10 @@ def ascii_print(glyph_array):
         print
 
 if __name__ == '__main__':
-    s = u'你好'
+    s = u'你好吗？'
     print 'check utf-8 support:',
     print s.encode('utf-8')
     font = ImageFont.truetype('NotoSansCJKsc-hinted/NotoSansCJKsc-Regular.otf', 24)
-    a = render(s, font)
-    print a
+    a = render_text(s, font)
+    print a.shape
     ascii_print(a)
