@@ -1,6 +1,6 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 # -*- coding:utf-8-*-
-import operator
+import operator, sys
 
 class Vocabulary_Builder(object):
     """docstring for Vocabulary_Builder"""
@@ -14,7 +14,7 @@ class Vocabulary_Builder(object):
         # 1. read through the file
         print "reading..."
 
-        with open(file_path,'r') as f:
+        with open(file_path, 'rb') as f:
             doc = f.readlines()
             for line in doc:
                 chars = line.split()
@@ -32,17 +32,22 @@ class Vocabulary_Builder(object):
 
         # 3. saving dictionary to a txt file
         print "saving..."
-        with open(self.save_vocabulary_path, 'w') as f:
+        with open(self.save_vocabulary_path, 'wb') as f:
             for items in sorted_dict:
-                f.write(items[0] + '\t' + str(items[1]))
+                # f.write(items[0] + '\t' + str(items[1]))
+                f.write(items[0])
                 f.write('\n')
         print "done"
 
 if __name__ == '__main__':
-    train_set_path = './work/train.txt'
+    # import argparse
+    #
+    # parser = argparse.ArgumentParser()
+    # parser.add_argument('-c', '--corpus-path', required=True)
+    # parser.add_argument('-d', '--dictionary-path')
+
+    train_set_path = sys.argv[1]
 
     vocab_builder = Vocabulary_Builder()
-    
+
     vocab_builder.read_in(train_set_path)
-
-
