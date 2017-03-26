@@ -8,8 +8,8 @@ class single_layer_RNN_LM(object):
         constructor collects two model hyperparameters
 
         Arguments: 
-        hidden_unit -- the hidden unit size of RNN cell
-        vocab_size -- the size of the vocabulary 
+        hidden_unit -- (int) the hidden unit size of RNN cell
+        vocab_size -- (int) the size of the vocabulary 
 
         """
         super(single_layer_RNN_LM, self).__init__()
@@ -25,15 +25,15 @@ class single_layer_RNN_LM(object):
         """LM build the computational graph
 
         Arguments:
-        embedding_tensor -- the input of LM, embedding_tensor.shape == (batch_size, steps, embedding_size) .
-        target_ids -- the index of the prediction token in the vocabulary, target_ids < vocab_size self.
-        seq_len -- (Optional) if the input is masked, seq_len shall be provided.
-        reuse -- (Optional) if the LM is reused
-        variable_scope -- (Optional) will raise error if reused is False and LM been called after the first
+        embedding_tensor -- (tf.Variable, dtype = tf.float32) the input of LM, embedding_tensor.shape == (batch_size, steps, embedding_size) .
+        target_ids -- (tf.Variable, type = tf.int32) the index of the prediction token in the vocabulary, target_ids < vocab_size self.
+        seq_len -- (Optional)(tf.Variable or python list) if the input is masked, seq_len shall be provided, len(seq_len) == batch_size.
+        reuse -- (Optional)(boolean) if the LM is reused
+        variable_scope -- (Optional)(string) will raise error if reused is False and LM been called after the first
                           multiple times
 
         Return:
-        perplexity -- the perplexity of LM given the input_tensor and it's prediction outputs
+        perplexity -- (float) the perplexity of LM given the input_tensor and it's prediction outputs
         """
         with tf.variable_scope(variable_scope, initializer=tf.contrib.layers.xavier_initializer(dtype = tf.float32)) as scope:
             if reuse:
