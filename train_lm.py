@@ -11,6 +11,20 @@ from render import render_text, ascii_print
 # from models.cnn.conv4 import build_cnn
 # from models.rnn.simple_gru import build_rnn
 
+class FastSaver(tf.train.Saver):
+    # HACK disable saving metagraphs
+    def save(self, sess, save_path, global_step=None, latest_filename=None, meta_graph_suffix='meta', write_meta_graph=True, write_state=True):
+        super(FastSaver, self).save(sess, save_path, global_step, latest_filename, meta_graph_suffix, False, write_state)
+
+def get_optimizer(opt_name, learning_rate, momentum):
+    if opt_name == 'adam':
+        optimizer = tf.train.AdamOptimizer(learning_rate)
+    elif opt_name == 'rmsprop':
+        optimizer = tf.train.RMSPropOptimizer(learning_rate, momentum=momentum, centered=True)
+    else:
+        optimizer = tf.train.MomentumOptimizer(learning_rate, momentum=momentum)
+    return optimizer
+
 def conform(im, shape):
     h, w = shape
     ih, iw = im.shape
@@ -54,11 +68,7 @@ def build_model(token_ids, seq_lens, vocab_size, embed_dim, rnn_dim):
 
     return seq_logits, final_state
 
-def train():
-    vocab_size = 200
-    n_oov_buckets = 1
-    batch_size = 4
-
+def train(log_dir, batch_size, vocab_size, n_oov_buckets, initial_lr, lr_decay_steps, lr_decay_rate, lr_staircase, no_grad_clip, clip_norm, opt_method, momentum):
     # input pipeline
     filename_queue = tf.train.string_input_producer(tf.train.match_filenames_once('work/train*.txt'), shuffle=True)
     reader = tf.TextLineReader()
@@ -75,38 +85,106 @@ def train():
     seq_lens = batch[1]
 
     # model
-    seq_logits, final_state = build_model(ids, seq_lens, vocab_size + n_oov_buckets, 100, 64)
+    with tf.variable_scope('model'):
+        seq_logits, final_state = build_model(ids, seq_lens, vocab_size + n_oov_buckets, 100, 64)
 
     # loss
     mask = tf.sequence_mask(seq_lens, dtype=tf.float32)
     loss = tf.contrib.seq2seq.sequence_loss(seq_logits, ids, mask, average_across_timesteps=True, average_across_batch=True)
     n_samples = tf.reduce_sum(mask)
 
-    update_op = tf.train.AdamOptimizer().minimize(loss * n_samples)
+    global_step = tf.contrib.framework.create_global_step()
+    learning_rate = tf.train.exponential_decay(learning_rate=initial_lr, global_step=global_step, decay_steps=lr_decay_steps, decay_rate=lr_decay_rate, staircase=lr_staircase)
+    optimizer = get_optimizer(opt_method, learning_rate, momentum)
 
-    with tf.Session() as sess:
-        tf.tables_initializer().run()
-        tf.global_variables_initializer().run()
+    trainable_vars = tf.trainable_variables()
+    # re-scale the loss to be the sum of losses of all time steps
+    grads = tf.gradients(loss * n_samples, trainable_vars)
+    grad_norm = tf.global_norm(grads)
+    var_norm = tf.global_norm(trainable_vars)
 
-        coord = tf.train.Coordinator()
-        threads = tf.train.start_queue_runners(coord=coord)
+    if no_grad_clip:
+        normed_grads = grads
+        clipped_norm = grad_norm
+    else:
+        # gradient clipping
+        normed_grads, _ = tf.clip_by_global_norm(grads, clip_norm, grad_norm)
+        clipped_norm = tf.minimum(clip_norm, grad_norm)
 
-        while True:
-            loss_val, _ = sess.run([loss, update_op])
-            print loss_val
-            # token_val, id_val, seq_len_val = sess.run([tokens, ids, seq_lens])
-            # print token_val
-            # print id_val, seq_len_val
+    update_op = optimizer.apply_gradients(zip(normed_grads, trainable_vars), global_step)
 
-        coord.request_stop()
-        coord.join(threads)
+    # summaries
+    tf.summary.scalar('train/loss', loss)
+    tf.summary.scalar('train/perplexity', tf.exp(loss))
+    tf.summary.scalar('train/learning_rate', learning_rate)
+    tf.summary.scalar('model/gradient_norm', grad_norm)
+    tf.summary.scalar('model/clipped_gradient_norm', clipped_norm)
+    tf.summary.scalar('model/variable_norm', var_norm)
+    for g, v in zip(normed_grads, trainable_vars):
+        tf.summary.histogram(v.name, g)
 
+    summary_op = tf.summary.merge_all()
+
+    summary_dir = os.path.join(log_dir, 'logs')
+    checkpoint_dir = os.path.join(log_dir, 'checkpoints')
+    writer = tf.summary.FileWriter(summary_dir, flush_secs=30)
+
+    init_op = tf.global_variables_initializer()
+    saver = FastSaver(keep_checkpoint_every_n_hours=1, max_to_keep=2)
+    # save metagraph once
+    saver.export_meta_graph(os.path.join(checkpoint_dir, 'model.meta'))
+
+    sv = tf.train.Supervisor(
+        is_chief=True,
+        saver=saver,
+        init_op=init_op,
+        ready_op=tf.report_uninitialized_variables(tf.global_variables()),
+        summary_writer=writer,
+        summary_op=summary_op,
+        global_step=global_step,
+        logdir=checkpoint_dir,
+        save_model_secs=30,
+        save_summaries_secs=30,
+        )
+
+    config = tf.ConfigProto(gpu_options={'allow_growth': True})
+    with sv.managed_session('', config=config) as sess, sess.as_default():
+        gs = global_step.eval()
+        if gs == 0:
+            print '* starting training at global step', gs
+        else:
+            print '* resuming training at global step', gs
+
+        sv.start_queue_runners(sess)
+        while not sv.should_stop():
+            sess.run(update_op)
+
+    sv.stop()
 
 if __name__ == '__main__':
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-l', '--log-dir', required=True)
+    parser.add_argument('-b', '--batch-size', type=int, default=16)
+    parser.add_argument('-v', '--vocab-size', type=int, default=1000)
+    parser.add_argument('-o', '--n-oov-buckets', type=int, default=1)
+    parser.add_argument('--optimizer', choices=['adam', 'rmsprop', 'momentum'], default='adam')
+    parser.add_argument('--momentum', type=float, default=0.)
+    parser.add_argument('--initial-lr', type=float, default=1e-3)
+    parser.add_argument('--lr-decay-rate', type=float, default=1.)
+    parser.add_argument('--lr-decay-steps', type=int, default=10**5)
+    parser.add_argument('--lr-staircase', action='store_true')
+    parser.add_argument('--no-grad-clip', action='store_true', help='disable gradient clipping')
+    parser.add_argument('--clip-norm', type=float, default=40.)
+
+    args = parser.parse_args()
+
+    train(args.log_dir, args.batch_size, args.vocab_size, args.n_oov_buckets, args.initial_lr, args.lr_decay_steps, args.lr_decay_rate, args.lr_staircase, args.no_grad_clip, args.clip_norm, args.optimizer, args.momentum)
+
     # s = u'你好吗？'
     # for c in s:
     #     a = render_glyph(c)
     #     print a.shape
     #     # print a
     #     # ascii_print(a)
-    train()
