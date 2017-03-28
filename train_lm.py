@@ -8,9 +8,6 @@ import os, argparse, importlib
 
 from render import render_text, ascii_print
 
-# from models.cnn.conv4 import build_cnn
-# from models.rnn.simple_gru import build_rnn
-
 class FastSaver(tf.train.Saver):
     # HACK disable saving metagraphs
     def save(self, sess, save_path, global_step=None, latest_filename=None, meta_graph_suffix='meta', write_meta_graph=True, write_state=True):
@@ -68,30 +65,50 @@ def build_model(token_ids, seq_lens, vocab_size, embed_dim, rnn_dim):
 
     return seq_logits, final_state
 
-def train(log_dir, batch_size, vocab_size, n_oov_buckets, initial_lr, lr_decay_steps, lr_decay_rate, lr_staircase, no_grad_clip, clip_norm, opt_method, momentum):
-    # input pipeline
-    filename_queue = tf.train.string_input_producer(tf.train.match_filenames_once('work/train*.txt'), shuffle=True)
+def build_input_pipeline(corpus_path, vocabulary, batch_size, shuffle):
+    filename_queue = tf.train.string_input_producer(tf.train.match_filenames_once(corpus_path), shuffle=True)
     reader = tf.TextLineReader()
     _, line = reader.read(filename_queue)
     seq_len = tf.shape(tf.string_split([line]).values)[0]
 
-    batch = tf.train.shuffle_batch([line, seq_len], batch_size=batch_size, capacity=128, min_after_dequeue=32)
-
-    # token to token-id lookup
-    vocabulary = tf.contrib.lookup.string_to_index_table_from_file('work/dict.txt', num_oov_buckets=n_oov_buckets, vocab_size=vocab_size)
+    if shuffle:
+        batch = tf.train.shuffle_batch([line, seq_len], batch_size=batch_size, capacity=128 * batch_size, min_after_dequeue=50 * batch_size)
+    else:
+        batch = tf.train.batch([line, seq_len], batch_size=batch_size, capacity=128 * batch_size)
 
     tokens = tf.string_split(batch[0])
     ids = tf.sparse_tensor_to_dense(vocabulary.lookup(tokens), validate_indices=False)
     seq_lens = batch[1]
 
+    return ids, seq_lens
+
+def train(train_split_path, val_split_path, dict_path, log_dir, batch_size, vocab_size, n_oov_buckets, initial_lr, lr_decay_steps, lr_decay_rate, lr_staircase, no_grad_clip, clip_norm, opt_method, momentum, val_interval):
+    # token to token-id lookup
+    vocabulary = tf.contrib.lookup.string_to_index_table_from_file(dict_path, num_oov_buckets=n_oov_buckets, vocab_size=vocab_size)
+
+    # input pipelines
+    # train
+    ids, seq_lens = build_input_pipeline(train_split_path, vocabulary, batch_size, shuffle=True)
+
+    # validation
+    val_ids, val_seq_lens = build_input_pipeline(val_split_path, vocabulary, batch_size, shuffle=False)
+
     # model
+    embed_dim, rnn_dim = 100, 64
     with tf.variable_scope('model'):
-        seq_logits, final_state = build_model(ids, seq_lens, vocab_size + n_oov_buckets, 100, 64)
+        seq_logits, final_state = build_model(ids, seq_lens, vocab_size + n_oov_buckets, embed_dim, rnn_dim)
+
+    # validation
+    with tf.variable_scope('model', reuse=True):
+        val_seq_logits, val_final_state = build_model(val_ids, val_seq_lens, vocab_size + n_oov_buckets, embed_dim, rnn_dim)
 
     # loss
     mask = tf.sequence_mask(seq_lens, dtype=tf.float32)
     loss = tf.contrib.seq2seq.sequence_loss(seq_logits, ids, mask, average_across_timesteps=True, average_across_batch=True)
     n_samples = tf.reduce_sum(mask)
+
+    val_mask = tf.sequence_mask(val_seq_lens, dtype=tf.float32)
+    val_loss = tf.contrib.seq2seq.sequence_loss(val_seq_logits, val_ids, val_mask, average_across_timesteps=True, average_across_batch=True)
 
     global_step = tf.contrib.framework.create_global_step()
     learning_rate = tf.train.exponential_decay(learning_rate=initial_lr, global_step=global_step, decay_steps=lr_decay_steps, decay_rate=lr_decay_rate, staircase=lr_staircase)
@@ -123,7 +140,12 @@ def train(log_dir, batch_size, vocab_size, n_oov_buckets, initial_lr, lr_decay_s
     for g, v in zip(normed_grads, trainable_vars):
         tf.summary.histogram(v.name, g)
 
-    summary_op = tf.summary.merge_all()
+    train_summary_op = tf.summary.merge_all()
+
+    val_summary = tf.summary.merge([
+        tf.summary.scalar('val/loss', val_loss),
+        tf.summary.scalar('val/perplexity', tf.exp(val_loss)),
+    ])
 
     summary_dir = os.path.join(log_dir, 'logs')
     checkpoint_dir = os.path.join(log_dir, 'checkpoints')
@@ -140,7 +162,7 @@ def train(log_dir, batch_size, vocab_size, n_oov_buckets, initial_lr, lr_decay_s
         init_op=init_op,
         ready_op=tf.report_uninitialized_variables(tf.global_variables()),
         summary_writer=writer,
-        summary_op=summary_op,
+        summary_op=train_summary_op,
         global_step=global_step,
         logdir=checkpoint_dir,
         save_model_secs=30,
@@ -158,6 +180,9 @@ def train(log_dir, batch_size, vocab_size, n_oov_buckets, initial_lr, lr_decay_s
         sv.start_queue_runners(sess)
         while not sv.should_stop():
             sess.run(update_op)
+            gs = global_step.eval()
+            if gs % val_interval == 0:
+                writer.add_summary(sess.run(val_summary), gs)
 
     sv.stop()
 
@@ -177,14 +202,11 @@ if __name__ == '__main__':
     parser.add_argument('--lr-staircase', action='store_true')
     parser.add_argument('--no-grad-clip', action='store_true', help='disable gradient clipping')
     parser.add_argument('--clip-norm', type=float, default=40.)
+    parser.add_argument('-t', '--train-corpus', default='work/train.txt', help='path to the training split')
+    parser.add_argument('-e', '--val-corpus', default='work/val.txt', help='path to the validation split')
+    parser.add_argument('--dictionary', default='work/dict.txt', help='path to the dictionary file')
+    parser.add_argument('--val-interval', type=int, default=16, help='interval of evaluation on the validation split')
 
     args = parser.parse_args()
 
-    train(args.log_dir, args.batch_size, args.vocab_size, args.n_oov_buckets, args.initial_lr, args.lr_decay_steps, args.lr_decay_rate, args.lr_staircase, args.no_grad_clip, args.clip_norm, args.optimizer, args.momentum)
-
-    # s = u'你好吗？'
-    # for c in s:
-    #     a = render_glyph(c)
-    #     print a.shape
-    #     # print a
-    #     # ascii_print(a)
+    train(args.train_corpus, args.val_corpus, args.dictionary, args.log_dir, args.batch_size, args.vocab_size, args.n_oov_buckets, args.initial_lr, args.lr_decay_steps, args.lr_decay_rate, args.lr_staircase, args.no_grad_clip, args.clip_norm, args.optimizer, args.momentum, args.val_interval)
