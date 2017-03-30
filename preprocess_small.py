@@ -30,7 +30,7 @@ if __name__ == '__main__':
         os.mkdir('segmentation')
 
     train_paths = glob.glob('corpora/icwb2-data/training/*.utf8')
-    test_paths = glob.glob('corpora/icwb2-data/testing/*.utf8')
+    test_paths = glob.glob('corpora/icwb2-data/gold/*.utf8')
     np.random.seed(123)
     for path in test_paths:
         file_name = path.split('/')[-1].split('.')[0]
