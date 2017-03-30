@@ -5,6 +5,9 @@
 # output format:
 # one paragraph per line with space separated tokens
 
+# USAGE:
+# put icwb2-data folder in corpora folder
+
 import os, gzip, argparse, glob
 import numpy as np
 
