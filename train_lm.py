@@ -4,7 +4,7 @@
 import numpy as np
 # import cv2
 import tensorflow as tf
-import os, argparse, importlib
+import os, argparse, importlib, glob
 
 from render import render_text, ascii_print
 
@@ -66,15 +66,16 @@ def build_model(token_ids, seq_lens, vocab_size, embed_dim, rnn_dim):
     return seq_logits, final_state
 
 def build_input_pipeline(corpus_path, vocabulary, batch_size, shuffle):
-    filename_queue = tf.train.string_input_producer(tf.train.match_filenames_once(corpus_path), shuffle=True)
+    # `corpus_path` could be a glob pattern
+    filename_queue = tf.train.string_input_producer(glob.glob(corpus_path), shuffle=True)
     reader = tf.TextLineReader()
     _, line = reader.read(filename_queue)
     seq_len = tf.shape(tf.string_split([line]).values)[0]
 
     if shuffle:
-        batch = tf.train.shuffle_batch([line, seq_len], batch_size=batch_size, capacity=128 * batch_size, min_after_dequeue=50 * batch_size)
+        batch = tf.train.shuffle_batch([line, seq_len], batch_size=batch_size, capacity=10 * batch_size, min_after_dequeue=5 * batch_size)
     else:
-        batch = tf.train.batch([line, seq_len], batch_size=batch_size, capacity=128 * batch_size)
+        batch = tf.train.batch([line, seq_len], batch_size=batch_size, capacity=10 * batch_size)
 
     tokens = tf.string_split(batch[0])
     ids = tf.sparse_tensor_to_dense(vocabulary.lookup(tokens), validate_indices=False)
@@ -91,7 +92,7 @@ def train(train_split_path, val_split_path, dict_path, log_dir, batch_size, voca
     ids, seq_lens = build_input_pipeline(train_split_path, vocabulary, batch_size, shuffle=True)
 
     # validation
-    val_ids, val_seq_lens = build_input_pipeline(val_split_path, vocabulary, batch_size, shuffle=False)
+    val_ids, val_seq_lens = build_input_pipeline(val_split_path, vocabulary, 20 * batch_size, shuffle=False)
 
     # model
     embed_dim, rnn_dim = 100, 64
@@ -177,14 +178,15 @@ def train(train_split_path, val_split_path, dict_path, log_dir, batch_size, voca
         else:
             print '* resuming training at global step', gs
 
-        sv.start_queue_runners(sess)
         while not sv.should_stop():
             sess.run(update_op)
             gs = global_step.eval()
             if gs % val_interval == 0:
-                writer.add_summary(sess.run(val_summary), gs)
+                loss_val, summary_val = sess.run([val_loss, val_summary])
+                writer.add_summary(summary_val, gs)
+                print 'step %i validation loss %g' % (gs, loss_val)
 
-    sv.stop()
+        sv.stop()
 
 if __name__ == '__main__':
     import argparse
