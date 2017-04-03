@@ -2,9 +2,8 @@
 # -*- coding: utf-8 -*-
 
 import numpy as np
-# import cv2
 import tensorflow as tf
-import os, argparse, importlib, glob
+import os, glob
 
 from render import render_text, ascii_print
 
@@ -65,17 +64,17 @@ def build_model(token_ids, seq_lens, vocab_size, embed_dim, rnn_dim):
 
     return seq_logits, final_state
 
-def build_input_pipeline(corpus_path, vocabulary, batch_size, shuffle):
+def build_input_pipeline(corpus_path, vocabulary, batch_size, shuffle, allow_smaller_final_batch, num_epochs):
     # `corpus_path` could be a glob pattern
-    filename_queue = tf.train.string_input_producer(glob.glob(corpus_path), shuffle=True)
+    filename_queue = tf.train.string_input_producer(glob.glob(corpus_path), shuffle=True, num_epochs=num_epochs)
     reader = tf.TextLineReader()
     _, line = reader.read(filename_queue)
     seq_len = tf.shape(tf.string_split([line]).values)[0]
 
     if shuffle:
-        batch = tf.train.shuffle_batch([line, seq_len], batch_size=batch_size, capacity=10 * batch_size, min_after_dequeue=5 * batch_size)
+        batch = tf.train.shuffle_batch([line, seq_len], batch_size=batch_size, capacity=10 * batch_size, min_after_dequeue=5 * batch_size, allow_smaller_final_batch=allow_smaller_final_batch)
     else:
-        batch = tf.train.batch([line, seq_len], batch_size=batch_size, capacity=10 * batch_size)
+        batch = tf.train.batch([line, seq_len], batch_size=batch_size, capacity=10 * batch_size, allow_smaller_final_batch=allow_smaller_final_batch)
 
     tokens = tf.string_split(batch[0])
     ids = tf.sparse_tensor_to_dense(vocabulary.lookup(tokens), validate_indices=False)
@@ -89,10 +88,10 @@ def train(train_split_path, val_split_path, dict_path, log_dir, batch_size, voca
 
     # input pipelines
     # train
-    ids, seq_lens = build_input_pipeline(train_split_path, vocabulary, batch_size, shuffle=True)
+    ids, seq_lens = build_input_pipeline(train_split_path, vocabulary, batch_size, shuffle=True, allow_smaller_final_batch=False, num_epochs=None)
 
     # validation
-    val_ids, val_seq_lens = build_input_pipeline(val_split_path, vocabulary, 20 * batch_size, shuffle=False)
+    val_ids, val_seq_lens = build_input_pipeline(val_split_path, vocabulary, 20 * batch_size, shuffle=False, allow_smaller_final_batch=False, num_epochs=None)
 
     # model
     embed_dim, rnn_dim = 100, 64
@@ -153,7 +152,7 @@ def train(train_split_path, val_split_path, dict_path, log_dir, batch_size, voca
     writer = tf.summary.FileWriter(summary_dir, flush_secs=30)
 
     init_op = tf.global_variables_initializer()
-    saver = FastSaver(keep_checkpoint_every_n_hours=1, max_to_keep=2)
+    saver = FastSaver(var_list=tf.global_variables(), keep_checkpoint_every_n_hours=1, max_to_keep=2)
     # save metagraph once
     saver.export_meta_graph(os.path.join(checkpoint_dir, 'model.meta'))
 
@@ -194,8 +193,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-l', '--log-dir', required=True)
     parser.add_argument('-b', '--batch-size', type=int, default=16)
-    parser.add_argument('-v', '--vocab-size', type=int, default=1000)
+    parser.add_argument('-m', '--vocab-size', type=int, default=1000)
     parser.add_argument('-o', '--n-oov-buckets', type=int, default=1)
+
     parser.add_argument('--optimizer', choices=['adam', 'rmsprop', 'momentum'], default='adam')
     parser.add_argument('--momentum', type=float, default=0.)
     parser.add_argument('--initial-lr', type=float, default=1e-3)
@@ -204,8 +204,9 @@ if __name__ == '__main__':
     parser.add_argument('--lr-staircase', action='store_true')
     parser.add_argument('--no-grad-clip', action='store_true', help='disable gradient clipping')
     parser.add_argument('--clip-norm', type=float, default=40.)
+
     parser.add_argument('-t', '--train-corpus', default='work/train.txt', help='path to the training split')
-    parser.add_argument('-e', '--val-corpus', default='work/val.txt', help='path to the validation split')
+    parser.add_argument('-v', '--val-corpus', default='work/val.txt', help='path to the validation split')
     parser.add_argument('--dictionary', default='work/dict.txt', help='path to the dictionary file')
     parser.add_argument('--val-interval', type=int, default=16, help='interval of evaluation on the validation split')
 
