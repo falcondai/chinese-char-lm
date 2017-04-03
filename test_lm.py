@@ -15,15 +15,16 @@ def test(test_split_path, dict_path, log_dir, batch_size, vocab_size, n_oov_buck
     # input pipelines
     # test
     ids, seq_lens = build_input_pipeline(test_split_path, vocabulary, batch_size, shuffle=False, allow_smaller_final_batch=True, num_epochs=1)
+    seq_lens -= 1
 
     # model
     embed_dim, rnn_dim = 100, 64
     with tf.variable_scope('model'):
-        seq_logits, final_state = build_model(ids, seq_lens, vocab_size + n_oov_buckets, embed_dim, rnn_dim)
+        seq_logits, final_state = build_model(ids[:, :-1], seq_lens, vocab_size + n_oov_buckets, embed_dim, rnn_dim)
 
     # loss
     mask = tf.sequence_mask(seq_lens, dtype=tf.float32)
-    loss = tf.contrib.seq2seq.sequence_loss(seq_logits, ids, mask, average_across_timesteps=True, average_across_batch=True)
+    loss = tf.contrib.seq2seq.sequence_loss(seq_logits, ids[:, 1:], mask, average_across_timesteps=True, average_across_batch=True)
     n_samples = tf.reduce_sum(mask)
 
     config = tf.ConfigProto(gpu_options={'allow_growth': True})

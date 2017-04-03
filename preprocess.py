@@ -8,10 +8,8 @@
 import os, gzip, argparse, glob
 import numpy as np
 
-def paragraphs(fp):
+def paragraphs(fp, start_tag, end_tag):
     # use <P> </P> to identify the start and end of a sentence
-    start_tag = '<P>'
-    end_tag = '</P>'
     paragraph = u''
     should_append = False
     for line in fp:
@@ -19,7 +17,7 @@ def paragraphs(fp):
         if should_append:
             if l == end_tag:
                 should_append = False
-                yield paragraph
+                yield start_tag + ' ' + paragraph.strip() + ' ' + end_tag
                 paragraph = u''
             else:
                 paragraph += u' '.join(l) + u' '
@@ -27,6 +25,8 @@ def paragraphs(fp):
             should_append = True
 
 if __name__ == '__main__':
+    start_tag = '<P>'
+    end_tag = '</P>'
     # create work directory
     if not os.path.exists('work'):
         os.mkdir('work')
@@ -36,11 +36,12 @@ if __name__ == '__main__':
         open('work/val.txt', 'wb'),
         open('work/test.txt', 'wb'),
     ]
-    gz_paths = glob.glob('corpora/cmn_gw_5/data/xin_cmn/*.gz')
+    # sorted by dates
+    gz_paths = sorted(glob.glob('corpora/cmn_gw_5/data/xin_cmn/*.gz'))
     np.random.seed(123)
     for gz_path in gz_paths:
         with gzip.open(gz_path, 'rb') as gz_f:
-            for paragraph in paragraphs(gz_f):
+            for paragraph in paragraphs(gz_f, start_tag, end_tag):
                 f = np.random.choice(out_fs, p=split_p)
                 f.write(paragraph.encode('utf-8'))
                 f.write('\n')

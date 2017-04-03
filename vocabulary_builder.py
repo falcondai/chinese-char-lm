@@ -7,8 +7,9 @@ class Vocabulary_Builder(object):
     def __init__(self, vocabulary_dict = {}):
         super(Vocabulary_Builder, self).__init__()
         self.vocabulary_dict = vocabulary_dict
-        self.save_vocabulary_path = './work/vocabulary_frequency_dictionary.txt'
-
+        self.save_vocabulary_path = './work/dict.txt'
+        self.start_tag = '<P>'
+        self.end_tag = '</P>'
 
     def read_in(self, file_path):
         # 1. read through the file
@@ -27,15 +28,16 @@ class Vocabulary_Builder(object):
         print "vocabulary building complete"
 
         # 2. sorting according to frequency
+        # put special symbols in the front
+        self.vocabulary_dict[self.start_tag] = sys.maxint
+        self.vocabulary_dict[self.end_tag] = sys.maxint
         sorted_dict = sorted(self.vocabulary_dict.items(), key=operator.itemgetter(1), reverse=True)
-
 
         # 3. saving dictionary to a txt file
         print "saving..."
         with open(self.save_vocabulary_path, 'wb') as f:
-            for items in sorted_dict:
-                # f.write(items[0] + '\t' + str(items[1]))
-                f.write(items[0])
+            for char, freq in sorted_dict:
+                f.write(char)
                 f.write('\n')
         print "done"
 

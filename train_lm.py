@@ -83,32 +83,37 @@ def build_input_pipeline(corpus_path, vocabulary, batch_size, shuffle, allow_sma
     return ids, seq_lens
 
 def train(train_split_path, val_split_path, dict_path, log_dir, batch_size, vocab_size, n_oov_buckets, initial_lr, lr_decay_steps, lr_decay_rate, lr_staircase, no_grad_clip, clip_norm, opt_method, momentum, val_interval):
+    assert vocab_size >= 2, 'vocabulary has to include at least start_tag and end_tag'
+    assert n_oov_buckets > 0, 'there must be at least 1 OOV bucket'
+
     # token to token-id lookup
     vocabulary = tf.contrib.lookup.string_to_index_table_from_file(dict_path, num_oov_buckets=n_oov_buckets, vocab_size=vocab_size)
 
     # input pipelines
     # train
     ids, seq_lens = build_input_pipeline(train_split_path, vocabulary, batch_size, shuffle=True, allow_smaller_final_batch=False, num_epochs=None)
+    seq_lens -= 1
 
     # validation
     val_ids, val_seq_lens = build_input_pipeline(val_split_path, vocabulary, 20 * batch_size, shuffle=False, allow_smaller_final_batch=False, num_epochs=None)
+    val_seq_lens -= 1
 
     # model
     embed_dim, rnn_dim = 100, 64
     with tf.variable_scope('model'):
-        seq_logits, final_state = build_model(ids, seq_lens, vocab_size + n_oov_buckets, embed_dim, rnn_dim)
+        seq_logits, final_state = build_model(ids[:, :-1], seq_lens, vocab_size + n_oov_buckets, embed_dim, rnn_dim)
 
     # validation
     with tf.variable_scope('model', reuse=True):
-        val_seq_logits, val_final_state = build_model(val_ids, val_seq_lens, vocab_size + n_oov_buckets, embed_dim, rnn_dim)
+        val_seq_logits, val_final_state = build_model(val_ids[:, :-1], val_seq_lens, vocab_size + n_oov_buckets, embed_dim, rnn_dim)
 
     # loss
     mask = tf.sequence_mask(seq_lens, dtype=tf.float32)
-    loss = tf.contrib.seq2seq.sequence_loss(seq_logits, ids, mask, average_across_timesteps=True, average_across_batch=True)
+    loss = tf.contrib.seq2seq.sequence_loss(seq_logits, ids[:, 1:], mask, average_across_timesteps=True, average_across_batch=True)
     n_samples = tf.reduce_sum(mask)
 
     val_mask = tf.sequence_mask(val_seq_lens, dtype=tf.float32)
-    val_loss = tf.contrib.seq2seq.sequence_loss(val_seq_logits, val_ids, val_mask, average_across_timesteps=True, average_across_batch=True)
+    val_loss = tf.contrib.seq2seq.sequence_loss(val_seq_logits, val_ids[:, 1:], val_mask, average_across_timesteps=True, average_across_batch=True)
 
     global_step = tf.contrib.framework.create_global_step()
     learning_rate = tf.train.exponential_decay(learning_rate=initial_lr, global_step=global_step, decay_steps=lr_decay_steps, decay_rate=lr_decay_rate, staircase=lr_staircase)
