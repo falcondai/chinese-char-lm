@@ -17,7 +17,7 @@ def char_split(file_handle):
         words_list = list(line.strip().decode('utf-8'))
         words_seq = [word for word in words_list]
 
-        new_line = ['</s>']
+        new_line = ['<s>']
         seg_index = [1]
         for word in words_seq:
             # issue: icwb data set has different segmentation convention 
