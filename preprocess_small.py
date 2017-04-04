@@ -28,6 +28,7 @@ def char_split(file_handle):
                 seg_index.append(0)
         new_line.append('</s>')
         seg_index.append(1)
+        seg_index.append(1)
         yield new_line, seg_index
         continue
     # return raw_lines, seg_indices
