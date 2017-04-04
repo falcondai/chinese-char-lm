@@ -16,16 +16,19 @@ def char_split(file_handle):
     for line in file_handle:
         words_list = list(line.strip().decode('utf-8'))
         words_seq = [word for word in words_list]
-        new_line = []
-        seg_index = []
+
+        new_line = ['</s>']
+        seg_index = [1]
         for word in words_seq:
+            # issue: icwb data set has different segmentation convention 
             if word == u' ' or word == u'\u3000':
-                seg_index.append(1)
+                seg_index[-1] = 1
             else:
                 new_line.append(word.encode('utf-8'))
                 seg_index.append(0)
-            
-        yield new_line, seg_index[1:]
+        new_line.append('</s>')
+        seg_index.append(1)
+        yield new_line, seg_index
         continue
     # return raw_lines, seg_indices
 
@@ -71,6 +74,7 @@ if __name__ == '__main__':
                 fhandle_tuple[0].write('\n')
                 fhandle_tuple[1].write(' '.join([str(index) for index in seg_index]))
                 fhandle_tuple[1].write('\n')
+
 
 
 
