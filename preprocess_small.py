@@ -27,7 +27,7 @@ def char_split(file_handle):
                 new_line.append(word.encode('utf-8'))
                 seg_index.append(0)
         new_line.append('</s>')
-        seg_index.append(1)
+        seg_index[-1] = 1
         seg_index.append(1)
         yield new_line, seg_index
         continue
