@@ -3,7 +3,8 @@
 
 import numpy as np
 import tensorflow as tf
-from tensorflow.python import debug as tfdbg
+# XXX importing debug module seems to cause segfault
+# from tensorflow.python import debug as tfdbg
 import os, glob
 
 from train_lm import build_input_pipeline, build_model
@@ -64,14 +65,15 @@ def test(test_split_path, dict_path, log_dir, batch_size, vocab_size, n_oov_buck
                 if i % print_interval == 0:
                     print 'minibatch %i loss %g' % (i, loss_val)
                 i += 1
+            coord.join(threads)
         except tf.errors.OutOfRangeError:
             print 'epoch limit reached'
-        finally:
-            coord.request_stop()
+        except Exception as e:
+            coord.request_stop(e)
 
-        per_symbol_loss = total_loss * 1. / total_n
-        print '* %i samples test loss %g' % (total_n, per_symbol_loss)
-        return per_symbol_loss
+    per_symbol_loss = total_loss / total_n
+    print '* %i samples test loss %g perplexity %g' % (total_n, per_symbol_loss, np.exp(per_symbol_loss))
+    return per_symbol_loss
 
 if __name__ == '__main__':
     import argparse

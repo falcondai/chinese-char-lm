@@ -2,10 +2,8 @@
 # -*- coding: utf-8 -*-
 
 import numpy as np
-import tensorflow as tf
 import os, glob
-
-from render import render_text, ascii_print
+import tensorflow as tf
 
 class FastSaver(tf.train.Saver):
     # HACK disable saving metagraphs
@@ -20,25 +18,6 @@ def get_optimizer(opt_name, learning_rate, momentum):
     else:
         optimizer = tf.train.MomentumOptimizer(learning_rate, momentum=momentum)
     return optimizer
-
-def conform(im, shape):
-    h, w = shape
-    ih, iw = im.shape
-    if ih == h:
-        return im
-    if ih > h:
-        # take the center crop
-        y0 = (ih - h) / 2
-        return im[y0:y0 + h]
-    # shorter image, ih < h
-    new_im = np.zeros(shape)
-    y0 = (h - ih) / 2
-    new_im[y0:y0 + ih] = im
-    return new_im
-
-def render_glyph(char, shape=(24, 24), font=None):
-    return conform(render_text(char, font), shape)
-    # return cv2.resize(render_text(char, font), shape)
 
 def build_model(token_ids, seq_lens, vocab_size, embed_dim, rnn_dim):
     # encoder
@@ -95,7 +74,7 @@ def train(train_split_path, val_split_path, dict_path, log_dir, batch_size, voca
     seq_lens -= 1
 
     # validation
-    val_ids, val_seq_lens = build_input_pipeline(val_split_path, vocabulary, 20 * batch_size, shuffle=False, allow_smaller_final_batch=False, num_epochs=None)
+    val_ids, val_seq_lens = build_input_pipeline(val_split_path, vocabulary, batch_size, shuffle=False, allow_smaller_final_batch=False, num_epochs=None)
     val_seq_lens -= 1
 
     # model
