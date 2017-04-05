@@ -35,7 +35,7 @@ def build_model(glyphs, seq_lens, vocab_size, embed_dim, rnn_dim, n_cnn_layers, 
             num_outputs=n_cnn_filters,
             kernel_size=(5, 5),
             stride=(2, 2),
-            activation_fn=tf.nn.elu,
+            activation_fn=tf.nn.relu,
             biases_initializer=tf.zeros_initializer(),
             weights_initializer=tf.contrib.layers.xavier_initializer_conv2d(),
             scope='conv%i' % (i+1),
@@ -109,7 +109,7 @@ def train(train_split_path, val_split_path, dict_path, log_dir, batch_size, voca
     # model
     glyph_ph = tf.placeholder('float', shape=[None, None, 24, 24], name='glyph')
     embed_dim, rnn_dim = 100, 64
-    n_cnn_layers, n_cnn_filters = 3, 16
+    n_cnn_layers, n_cnn_filters = 1, 32
     with tf.variable_scope('model'):
         seq_logits, final_state = build_model(glyph_ph[:, :-1], seq_lens, vocab_size + n_oov_buckets, embed_dim, rnn_dim, n_cnn_layers, n_cnn_filters)
 
