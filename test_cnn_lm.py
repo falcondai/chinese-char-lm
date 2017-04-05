@@ -21,7 +21,7 @@ def test(test_split_path, dict_path, log_dir, batch_size, vocab_size, n_oov_buck
     # model
     glyph_ph = tf.placeholder('float', shape=[None, None, 24, 24], name='glyph')
     embed_dim, rnn_dim = 100, 64
-    n_cnn_layers, n_cnn_filters = 1, 32
+    n_cnn_layers, n_cnn_filters = 0, 32
     with tf.variable_scope('model'):
         seq_logits, final_state = build_model(glyph_ph[:, :-1], seq_lens, vocab_size + n_oov_buckets, embed_dim, rnn_dim, n_cnn_layers, n_cnn_filters)
 
