@@ -29,17 +29,27 @@ def build_model(glyphs, seq_lens, vocab_size, embed_dim, rnn_dim, n_cnn_layers, 
     bs = tf.size(seq_lens)
     net = glyphs / 255.
     net = tf.reshape(net, (-1, 24, 24, 1))
-    for i in xrange(n_cnn_layers):
-        net = tf.contrib.layers.convolution2d(
-            inputs=net,
-            num_outputs=n_cnn_filters,
-            kernel_size=(5, 5),
-            stride=(2, 2),
-            activation_fn=tf.nn.relu,
-            biases_initializer=tf.zeros_initializer(),
-            weights_initializer=tf.contrib.layers.xavier_initializer_conv2d(),
-            scope='conv%i' % (i+1),
-        )
+    net = tf.contrib.layers.convolution2d(
+        inputs=net,
+        num_outputs=32,
+        kernel_size=(7, 7),
+        stride=(2, 2),
+        activation_fn=tf.nn.relu,
+        biases_initializer=tf.zeros_initializer(),
+        weights_initializer=tf.contrib.layers.xavier_initializer_conv2d(),
+        scope='conv1',
+    )
+
+    net = tf.contrib.layers.convolution2d(
+        inputs=net,
+        num_outputs=16,
+        kernel_size=(5, 5),
+        stride=(2, 2),
+        activation_fn=tf.nn.relu,
+        biases_initializer=tf.zeros_initializer(),
+        weights_initializer=tf.contrib.layers.xavier_initializer_conv2d(),
+        scope='conv2',
+    )
 
     net = tf.contrib.layers.flatten(net)
     net = tf.contrib.layers.fully_connected(

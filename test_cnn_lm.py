@@ -3,7 +3,6 @@
 
 import numpy as np
 import tensorflow as tf
-# XXX importing debug module seems to cause segfault
 # from tensorflow.python import debug as tfdbg
 import os, glob
 
@@ -62,7 +61,7 @@ def test(test_split_path, dict_path, log_dir, batch_size, vocab_size, n_oov_buck
         try:
             while not coord.should_stop():
                 ids_val, seq_lens_val, lines_val = sess.run([ids, seq_lens, lines])
-
+                print i, lines_val
                 # generate glyphs for characters
                 glyphs = generate_glyphs(ids_val, lines_val)
 
