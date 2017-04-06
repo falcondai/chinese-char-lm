@@ -68,13 +68,13 @@ def build_model(glyphs, seq_lens, vocab_size, embed_dim, rnn_dim, n_cnn_layers, 
         scope='token_logit',
     )
 
-    seq_logits = tf.reshape(token_logit, (bs, -1, vocab_size))
+    seq_logits = tf.reshape(token_logit, (bs, -1, 2))
 
     return seq_logits, final_state
 
-def build_input_pipeline(corpus_path, vocabulary, batch_size, shuffle, allow_smaller_final_batch, num_epochs):
+def build_input_pipeline(corpus_path, target_corpus_path, vocabulary, batch_size, shuffle, allow_smaller_final_batch, num_epochs):
     # `corpus_path` could be a glob pattern
-    filename_queue = tf.train.string_input_producer(glob.glob(corpus_path), shuffle=True, num_epochs=num_epochs)
+    input_filename_queue = tf.train.string_input_producer(glob.glob(corpus_path), shuffle=False, num_epochs=num_epochs)
     target_filename_queue = tf.train.string_input_producer(glob.glob(target_corpus_path), shuffle=False, num_epochs=num_epochs)
 
     _, input_line = tf.TextLineReader().read(input_filename_queue)
@@ -101,6 +101,7 @@ def build_input_pipeline(corpus_path, vocabulary, batch_size, shuffle, allow_sma
     target_tokens, mapping=mapping_strings, default_value=-1), validate_indices=False)
 
     return ids, seq_lens, input_lines, targets
+
 def metric_func(seq_logits, targets, mask):
     prediction = tf.argmax(seq_logits, axis = -1)
     confusion_matrix = tf.confusion_matrix(
@@ -122,7 +123,7 @@ def metric_func(seq_logits, targets, mask):
 
     return precision, recall, F1, accuracy
 
-def train(train_split_path, val_split_path, dict_path, log_dir, batch_size, vocab_size, n_oov_buckets, initial_lr, lr_decay_steps, lr_decay_rate, lr_staircase, no_grad_clip, clip_norm, opt_method, momentum, val_interval, save_interval, summary_interval):
+def train(train_split_path,train_tar_path, val_split_path, val_tar_path, dict_path, log_dir, batch_size, vocab_size, n_oov_buckets, initial_lr, lr_decay_steps, lr_decay_rate, lr_staircase, no_grad_clip, clip_norm, opt_method, momentum, val_interval, save_interval, summary_interval):
     assert vocab_size >= 2, 'vocabulary has to include at least start_tag and end_tag'
     assert n_oov_buckets > 0, 'there must be at least 1 OOV bucket'
 
@@ -131,10 +132,10 @@ def train(train_split_path, val_split_path, dict_path, log_dir, batch_size, voca
 
     # input pipelines
     # train
-    ids, seq_lens, lines, targets = build_input_pipeline(train_split_path, vocabulary, batch_size, shuffle=True, allow_smaller_final_batch=False, num_epochs=None)
+    ids, seq_lens, lines, targets = build_input_pipeline(train_split_path, train_tar_path, vocabulary, batch_size, shuffle=True, allow_smaller_final_batch=False, num_epochs=None)
 
     # validation
-    val_ids, val_seq_lens, val_lines, val_targets = build_input_pipeline(val_split_path, vocabulary, batch_size, shuffle=False, allow_smaller_final_batch=False, num_epochs=None)
+    val_ids, val_seq_lens, val_lines, val_targets = build_input_pipeline(val_split_path, val_tar_path, vocabulary, batch_size, shuffle=False, allow_smaller_final_batch=False, num_epochs=None)
 
     # model
     glyph_ph = tf.placeholder('float', shape=[None, None, 24, 24], name='glyph')
@@ -248,7 +249,7 @@ def train(train_split_path, val_split_path, dict_path, log_dir, batch_size, voca
 
         try:
             while not coord.should_stop():
-                ids_val, seq_lens_val, lines_val = sess.run([ids, seq_lens, lines])
+                ids_val, seq_lens_val, lines_val, targets_val = sess.run([ids, seq_lens, lines, targets])
 
                 # generate glyphs for characters
                 glyphs = generate_glyphs(ids_val, lines_val)
@@ -257,6 +258,7 @@ def train(train_split_path, val_split_path, dict_path, log_dir, batch_size, voca
                     ids: ids_val,
                     seq_lens: seq_lens_val,
                     glyph_ph: glyphs,
+                    targets: targets_val
                 }
 
                 if gs % summary_interval == 0:
@@ -269,7 +271,8 @@ def train(train_split_path, val_split_path, dict_path, log_dir, batch_size, voca
                     saver.save(sess, checkpoint_dir + '/model', write_meta_graph=False, global_step=gs)
 
                 if gs % val_interval == 0:
-                    val_ids_val, val_seq_lens_val, val_lines_val = sess.run([val_ids, val_seq_lens, val_lines])
+
+                    val_ids_val, val_seq_lens_val, val_lines_val, val_target_val = sess.run([val_ids, val_seq_lens, val_lines, val_targets])
 
                     # generate glyphs for characters
                     val_glyphs = generate_glyphs(val_ids_val, val_lines_val)
@@ -278,6 +281,7 @@ def train(train_split_path, val_split_path, dict_path, log_dir, batch_size, voca
                         val_ids: val_ids_val,
                         val_seq_lens: val_seq_lens_val,
                         val_glyph_ph: val_glyphs,
+                        val_targets: val_target_val
                     })
                     writer.add_summary(val_summary_val, gs)
                     print 'step %i validation loss %g' % (gs, loss_val)
@@ -309,8 +313,10 @@ if __name__ == '__main__':
     parser.add_argument('--train-target', default='segmentation/pku_train_seg', help='path to the training segmentation answer' )
     parser.add_argument('-v', '--val-corpus', default='segmentation/pku_val_raw', help='path to the validation split')
     parser.add_argument('--val-target', default='segmentation/pku_val_seg')
-    parser.add_argument('--dictionary', default='work/vocabulary_frequency_dictionary.txt', help='path to the dictionary file')
+    parser.add_argument('--dictionary', default='work/dict.txt', help='path to the dictionary file')
+    parser.add_argument('--save-interval', type=int, default=32, help='interval of checkpoints')
+    parser.add_argument('--summary-interval', type=int, default=32, help='interval of summary')
     parser.add_argument('--val-interval', type=int, default=16, help='interval of evaluation on the validation split')
     args = parser.parse_args()
 
-    train(args.train_corpus, args.val_corpus, args.dictionary, args.log_dir, args.batch_size, args.vocab_size, args.n_oov_buckets, args.initial_lr, args.lr_decay_steps, args.lr_decay_rate, args.lr_staircase, args.no_grad_clip, args.clip_norm, args.optimizer, args.momentum, args.val_interval, args.save_interval, args.summary_interval)
+    train(args.train_corpus, args.train_target, args.val_corpus, args.val_target, args.dictionary, args.log_dir, args.batch_size, args.vocab_size, args.n_oov_buckets, args.initial_lr, args.lr_decay_steps, args.lr_decay_rate, args.lr_staircase, args.no_grad_clip, args.clip_norm, args.optimizer, args.momentum, args.val_interval, args.save_interval, args.summary_interval)
