@@ -140,7 +140,7 @@ def train(train_split_path,train_tar_path, val_split_path, val_tar_path, dict_pa
     # model
     glyph_ph = tf.placeholder('float', shape=[None, None, 24, 24], name='glyph')
     embed_dim, rnn_dim = 100, 64
-    n_cnn_layers, n_cnn_filters = 3, 16
+    n_cnn_layers, n_cnn_filters = 1, 16
     with tf.variable_scope('model'):
         seq_logits, final_state = build_model(glyph_ph, seq_lens, vocab_size + n_oov_buckets, embed_dim, rnn_dim, n_cnn_layers, n_cnn_filters)
 
