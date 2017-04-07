@@ -6,7 +6,7 @@ import tensorflow as tf
 # from tensorflow.python import debug as tfdbg
 import os, glob
 
-from train_cnn_lm import build_input_pipeline, build_model, generate_glyphs
+from train_id_cnn_lm import build_input_pipeline, build_model, generate_glyphs
 
 def test(test_split_path, dict_path, log_dir, batch_size, vocab_size, n_oov_buckets, print_interval):
     # token to token-id lookup
@@ -22,7 +22,7 @@ def test(test_split_path, dict_path, log_dir, batch_size, vocab_size, n_oov_buck
     embed_dim, rnn_dim = 100, 64
     n_cnn_layers, n_cnn_filters = 0, 32
     with tf.variable_scope('model'):
-        seq_logits, final_state = build_model(glyph_ph[:, :-1], seq_lens, vocab_size + n_oov_buckets, embed_dim, rnn_dim, n_cnn_layers, n_cnn_filters)
+        seq_logits, final_state = build_model(ids[:, :-1], glyph_ph[:, :-1], seq_lens, vocab_size + n_oov_buckets, embed_dim, rnn_dim, n_cnn_layers, n_cnn_filters)
 
     # loss
     mask = tf.sequence_mask(seq_lens, dtype=tf.float32)
