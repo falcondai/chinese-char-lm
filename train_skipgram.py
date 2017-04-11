@@ -4,25 +4,11 @@
 import numpy as np
 import cv2
 import tensorflow as tf
+from tensorflow.contrib.tensorboard.plugins import projector
 # from tensorflow.python import debug as tfdbg
 import os, glob
-from train_lm import get_optimizer, FastSaver
-from render import render_text
-
-def render_glyph(char, shape=(24, 24), font=None, interpolation=cv2.INTER_NEAREST):
-    glyph = render_text(char, font)
-    if np.prod(glyph.shape) == 0:
-        return np.zeros(shape, dtype=np.int32)
-    return cv2.resize(glyph, shape, interpolation=interpolation)
-
-def generate_glyphs(ids_val, lines_val):
-    batch_size, max_len = ids_val.shape
-    glyphs = np.zeros((batch_size, max_len, 24, 24))
-    for i, line in enumerate(lines_val):
-        tokens = line.split()
-        for j, token in enumerate(tokens):
-            glyphs[i, j] = render_glyph(token.decode('utf8'), shape=(24, 24))
-    return glyphs
+from train_lm import get_optimizer
+from train_cnn_lm import build_input_pipeline
 
 def build_model(center_token_ids, context_token_ids, vocab_size, embed_dim, n_cnn_layers, n_cnn_filters, nce_noise_samples):
     # encoder
@@ -35,27 +21,9 @@ def build_model(center_token_ids, context_token_ids, vocab_size, embed_dim, n_cn
 
     nce_labels = tf.expand_dims(context_token_ids, -1)
 
-    loss = tf.reduce_sum(tf.nn.nce_loss(weights=nce_weights, biases=nce_biases, labels=nce_labels, inputs=net, num_sampled=nce_noise_samples, num_classes=vocab_size, remove_accidental_hits=True))
+    loss = tf.reduce_mean(tf.nn.nce_loss(weights=nce_weights, biases=nce_biases, labels=nce_labels, inputs=net, num_sampled=nce_noise_samples, num_classes=vocab_size, remove_accidental_hits=True))
 
     return loss
-
-def build_input_pipeline(corpus_path, vocabulary, batch_size, shuffle, allow_smaller_final_batch, num_epochs):
-    # `corpus_path` could be a glob pattern
-    filename_queue = tf.train.string_input_producer(glob.glob(corpus_path), shuffle=True, num_epochs=num_epochs)
-    reader = tf.TextLineReader()
-    _, line = reader.read(filename_queue)
-    seq_len = tf.shape(tf.string_split([line]).values)[0]
-
-    if shuffle:
-        batch = tf.train.shuffle_batch([line, seq_len], batch_size=batch_size, capacity=10 * batch_size, min_after_dequeue=5 * batch_size, allow_smaller_final_batch=allow_smaller_final_batch)
-    else:
-        batch = tf.train.batch([line, seq_len], batch_size=batch_size, capacity=10 * batch_size, allow_smaller_final_batch=allow_smaller_final_batch)
-
-    lines, seq_lens = batch
-    tokens = tf.string_split(lines)
-    ids = tf.sparse_tensor_to_dense(vocabulary.lookup(tokens), validate_indices=False)
-
-    return ids, seq_lens, lines
 
 def get_skip_pairs(ids, seq_lens, lines, max_window, batch_size):
     # yield batches of pairs (id(center_token), id(context_token))
@@ -118,7 +86,7 @@ def train(train_split_path, val_split_path, dict_path, log_dir, batch_size, voca
 
     # loss
     # loss = tf.losses.sparse_softmax_cross_entropy(context_token_ids, context_token_logits)
-    # n_samples = tf.cast(tf.size(context_token_ids), 'float')
+    n_samples = tf.cast(tf.size(context_token_ids_ph), 'float')
 
     # val_loss = tf.losses.sparse_softmax_cross_entropy(val_context_token_ids, val_context_token_logits)
 
@@ -127,7 +95,7 @@ def train(train_split_path, val_split_path, dict_path, log_dir, batch_size, voca
     optimizer = get_optimizer(opt_method, learning_rate, momentum)
 
     trainable_vars = tf.trainable_variables()
-    grads = tf.gradients(loss, trainable_vars)
+    grads = tf.gradients(loss * n_samples, trainable_vars)
     grad_norm = tf.global_norm(grads)
     var_norm = tf.global_norm(trainable_vars)
 
@@ -135,35 +103,41 @@ def train(train_split_path, val_split_path, dict_path, log_dir, batch_size, voca
 
     # summaries
     tf.summary.scalar('train/loss', loss)
-    # tf.summary.scalar('train/perplexity', tf.exp(loss))
+    tf.summary.scalar('train/perplexity', tf.exp(loss))
     tf.summary.scalar('train/learning_rate', learning_rate)
     tf.summary.scalar('model/gradient_norm', grad_norm)
     tf.summary.scalar('model/variable_norm', var_norm)
     for g, v in zip(grads, trainable_vars):
-        print g, v.name
         tf.summary.histogram(v.name, g)
 
     train_summary = tf.summary.merge_all()
 
     val_summary = tf.summary.merge([
         tf.summary.scalar('val/loss', val_loss),
-        # tf.summary.scalar('val/perplexity', tf.exp(val_loss)),
+        tf.summary.scalar('val/perplexity', tf.exp(val_loss)),
     ])
 
     summary_dir = os.path.join(log_dir, 'logs')
-    checkpoint_dir = os.path.join(log_dir, 'checkpoints')
-    writer = tf.summary.FileWriter(summary_dir, flush_secs=30)
+    # checkpoint_dir = os.path.join(log_dir, 'checkpoints')
+    checkpoint_dir = summary_dir
 
-    saver = FastSaver(var_list=tf.global_variables(), keep_checkpoint_every_n_hours=1, max_to_keep=2)
+    saver = tf.train.Saver(var_list=tf.global_variables(), keep_checkpoint_every_n_hours=1, max_to_keep=2)
     # save metagraph once
     saver.export_meta_graph(os.path.join(checkpoint_dir, 'model.meta'))
 
+    # visualize embeddings
+    # XXX the `model_checkpoint_dir` seems to be useless
+    projector_config = projector.ProjectorConfig()
+    embed = projector_config.embeddings.add()
+    embed.tensor_name = 'model/EmbedSequence/embeddings'
+    embed.metadata_path = os.path.join(summary_dir, 'dict.txt')
+
     config = tf.ConfigProto(gpu_options={'allow_growth': True})
     with tf.Session(config=config) as sess:
+        writer = tf.summary.FileWriter(summary_dir, flush_secs=30, graph=sess.graph)
+        projector.visualize_embeddings(writer, projector_config)
         # sess = tfdbg.LocalCLIDebugWrapperSession(sess)
 
-        checkpoint_dir = os.path.join(log_dir, 'checkpoints')
-        saver = tf.train.Saver(tf.global_variables())
         latest_checkpoint_path = tf.train.latest_checkpoint(checkpoint_dir)
         if not latest_checkpoint_path is None:
             print '* restoring model from checkpoint %s' % latest_checkpoint_path
