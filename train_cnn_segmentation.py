@@ -216,6 +216,10 @@ def train(train_split_path,train_tar_path, val_split_path, val_tar_path, dict_pa
     # save metagraph once
     saver.export_meta_graph(os.path.join(checkpoint_dir, 'model.meta'))
 
+    saver_best_model = FastSaver(var_list=tf.global_variables(), keep_checkpoint_every_n_hours = 1, max_to_keep = 10)
+    saver_best_model.export_meta_graph(os.path.join(best_model_checkpoint_dir, 'model.meta'))
+    minimum_loss_val = 10000.0
+
     config = tf.ConfigProto(gpu_options={'allow_growth': True})
     with tf.Session(config=config) as sess:
         # sess = tfdbg.LocalCLIDebugWrapperSession(sess)
@@ -283,6 +287,10 @@ def train(train_split_path,train_tar_path, val_split_path, val_tar_path, dict_pa
                         val_glyph_ph: val_glyphs,
                         val_targets: val_target_val
                     })
+                    if loss_val < minimum_loss_val:
+                    minimum_loss_val = loss_val
+                    saver_best_model.save(sess, best_model_checkpoint_dir + '/model', write_meta_graph=False, global_step=gs)
+
                     writer.add_summary(val_summary_val, gs)
                     print 'step %i validation loss %g' % (gs, loss_val)
             coord.join(threads)

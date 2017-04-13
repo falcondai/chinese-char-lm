@@ -123,9 +123,6 @@ def train(train_split_path, train_tar_path, val_split_path, val_tar_path, dict_p
     ids, seq_lens, targets = build_input_pipeline(train_split_path, train_tar_path, vocabulary, batch_size, shuffle=True, allow_smaller_final_batch=False, num_epochs=None)
 
 
- 
-
-
     # validation
     val_ids, val_seq_lens, val_targets = build_input_pipeline(val_split_path, val_tar_path, vocabulary, 20 * batch_size, shuffle=False, allow_smaller_final_batch=False, num_epochs=None)
     
@@ -205,6 +202,8 @@ def train(train_split_path, train_tar_path, val_split_path, val_tar_path, dict_p
 
     summary_dir = os.path.join(log_dir, 'logs')
     checkpoint_dir = os.path.join(log_dir, 'checkpoints')
+    best_model_checkpoint_dir = os.path.join(log_dir, 'best_model')
+
     writer = tf.summary.FileWriter(summary_dir, flush_secs=30)
 
     init_op = tf.global_variables_initializer()
@@ -212,9 +211,12 @@ def train(train_split_path, train_tar_path, val_split_path, val_tar_path, dict_p
     # save metagraph once
     saver.export_meta_graph(os.path.join(checkpoint_dir, 'model.meta'))
 
+    saver_best_model = FastSaver(var_list=tf.global_variables(), keep_checkpoint_every_n_hours = 1, max_to_keep = 10)
+    saver_best_model.export_meta_graph(os.path.join(best_model_checkpoint_dir, 'model.meta'))
+
     sv = tf.train.Supervisor(
         is_chief=True,
-        saver=None,
+        saver=saver,
         init_op=init_op,
         ready_op=tf.report_uninitialized_variables(tf.global_variables()),
         summary_writer=writer,
@@ -226,6 +228,9 @@ def train(train_split_path, train_tar_path, val_split_path, val_tar_path, dict_p
         )
 
     config = tf.ConfigProto(gpu_options={'allow_growth': True})
+
+    minimum_loss_val = 10000.0
+
     with sv.managed_session('', config=config) as sess, sess.as_default():
         gs = global_step.eval()
         if gs == 0:
@@ -239,6 +244,10 @@ def train(train_split_path, train_tar_path, val_split_path, val_tar_path, dict_p
             gs = global_step.eval()
             if gs % val_interval == 0:
                 loss_val, summary_val = sess.run([val_loss, val_summary])
+                if loss_val < minimum_loss_val:
+                    minimum_loss_val = loss_val
+                    saver_best_model.save(sess, best_model_checkpoint_dir + '/model', write_meta_graph=False, global_step=gs)
+
                 writer.add_summary(summary_val, gs)
                 print 'step %i validation loss %g' % (gs, loss_val)
 
@@ -266,8 +275,8 @@ if __name__ == '__main__':
     parser.add_argument('--train-target', default='segmentation/pku_train_seg', help='path to the training segmentation answer' )
     parser.add_argument('-v', '--val-corpus', default='segmentation/pku_val_raw', help='path to the validation split')
     parser.add_argument('--val-target', default='segmentation/pku_val_seg')
-    parser.add_argument('--dictionary', default='work/vocabulary_frequency_dictionary.txt', help='path to the dictionary file')
-    parser.add_argument('--val-interval', type=int, default=16, help='interval of evaluation on the validation split')
+    parser.add_argument('--dictionary', default='work/dict.txt', help='path to the dictionary file')
+    parser.add_argument('--val-interval', type=int, default=10000, help='interval of evaluation on the validation split')
 
     args = parser.parse_args()
 
