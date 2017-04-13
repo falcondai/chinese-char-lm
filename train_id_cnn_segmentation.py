@@ -216,6 +216,8 @@ def train(train_split_path,train_tar_path, val_split_path, val_tar_path, dict_pa
 
     summary_dir = os.path.join(log_dir, 'logs')
     checkpoint_dir = os.path.join(log_dir, 'checkpoints')
+    best_model_checkpoint_dir = os.path.join(log_dir, 'best_model')
+    
     writer = tf.summary.FileWriter(summary_dir, flush_secs=30)
 
     saver = FastSaver(var_list=tf.global_variables(), keep_checkpoint_every_n_hours=1, max_to_keep=2)
@@ -295,8 +297,8 @@ def train(train_split_path,train_tar_path, val_split_path, val_tar_path, dict_pa
                     })
 
                     if loss_val < minimum_loss_val:
-                    minimum_loss_val = loss_val
-                    saver_best_model.save(sess, best_model_checkpoint_dir + '/model', write_meta_graph=False, global_step=gs)
+                        minimum_loss_val = loss_val
+                        saver_best_model.save(sess, best_model_checkpoint_dir + '/model', write_meta_graph=False, global_step=gs)
 
                     writer.add_summary(val_summary_val, gs)
                     print 'step %i validation loss %g' % (gs, loss_val)

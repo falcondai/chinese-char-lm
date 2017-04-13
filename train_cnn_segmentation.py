@@ -210,6 +210,8 @@ def train(train_split_path,train_tar_path, val_split_path, val_tar_path, dict_pa
 
     summary_dir = os.path.join(log_dir, 'logs')
     checkpoint_dir = os.path.join(log_dir, 'checkpoints')
+    best_model_checkpoint_dir = os.path.join(log_dir, 'best_model')
+    
     writer = tf.summary.FileWriter(summary_dir, flush_secs=30)
 
     saver = FastSaver(var_list=tf.global_variables(), keep_checkpoint_every_n_hours=1, max_to_keep=2)
