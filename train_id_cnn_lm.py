@@ -7,13 +7,8 @@ import tensorflow as tf
 # from tensorflow.python import debug as tfdbg
 import os, glob
 from train_lm import get_optimizer, FastSaver
-from render import render_text
-
-def render_glyph(char, shape=(24, 24), font=None, interpolation=cv2.INTER_NEAREST):
-    glyph = render_text(char, font)
-    if np.prod(glyph.shape) == 0:
-        return np.zeros(shape, dtype=np.int32)
-    return cv2.resize(glyph, shape, interpolation=interpolation)
+from train_cnn_lm import render_glyph
+from models.glyph_embed import simple_cnn_1, simple_cnn_2, multi_path_cnn_1
 
 def generate_glyphs(ids_val, lines_val):
     batch_size, max_len = ids_val.shape
@@ -21,52 +16,26 @@ def generate_glyphs(ids_val, lines_val):
     for i, line in enumerate(lines_val):
         tokens = line.split()
         for j, token in enumerate(tokens):
-            glyphs[i, j] = render_glyph(token.decode('utf8'), shape=(24, 24))
+            glyphs[i, j] = render_glyph(token.decode('utf8'))
     return glyphs
 
-def build_model(token_ids, glyphs, seq_lens, vocab_size, embed_dim, rnn_dim, n_cnn_layers, n_cnn_filters):
+def build_model(token_ids, glyphs, seq_lens, vocab_size, n_oov_buckets, embed_dim, rnn_dim):
     # encoder
     bs = tf.size(seq_lens)
-    glyph_unaware = tf.contrib.layers.embed_sequence(token_ids, vocab_size, embed_dim)
+    glyph_unaware = tf.contrib.layers.embed_sequence(token_ids, vocab_size + n_oov_buckets, embed_dim)
 
     # glyph-aware
-    net = glyphs / 255.
-    net = tf.reshape(net, (-1, 24, 24, 1))
-    net = tf.contrib.layers.convolution2d(
-        inputs=net,
-        num_outputs=32,
-        kernel_size=(7, 7),
-        stride=(2, 2),
-        activation_fn=tf.nn.relu,
-        biases_initializer=tf.zeros_initializer(),
-        weights_initializer=tf.contrib.layers.xavier_initializer_conv2d(),
-        scope='conv1',
-    )
-
-    # net = tf.contrib.layers.convolution2d(
-    #     inputs=net,
-    #     num_outputs=16,
-    #     kernel_size=(5, 5),
-    #     stride=(2, 2),
-    #     activation_fn=tf.nn.relu,
-    #     biases_initializer=tf.zeros_initializer(),
-    #     weights_initializer=tf.contrib.layers.xavier_initializer_conv2d(),
-    #     scope='conv2',
-    # )
-
-    net = tf.contrib.layers.flatten(net)
-    net = tf.contrib.layers.fully_connected(
-        inputs=net,
-        num_outputs=embed_dim,
-        biases_initializer=tf.zeros_initializer(),
-        weights_initializer=tf.contrib.layers.xavier_initializer(),
-        activation_fn=None,
-        scope='embedding_fc',
-    )
+    glyphs = tf.reshape(glyphs, (-1, 24, 24, 1))
+    net = simple_cnn_2.build_model(glyphs, embed_dim)
 
     glyph_aware = tf.reshape(net, (bs, -1, embed_dim))
 
-    rnn_input = glyph_unaware + glyph_aware
+    in_vocab = tf.expand_dims(tf.cast(tf.less(token_ids, vocab_size), 'float'), -1)
+    rnn_input = glyph_unaware + in_vocab * glyph_aware
+    # mixed4k-tb0
+    # rnn_input = glyph_unaware + 0. * glyph_aware
+    # mixed4k-c0
+    # rnn_input = 0. * glyph_unaware + glyph_aware
 
     # rnn
     cell = tf.contrib.rnn.GRUBlockCell(rnn_dim)
@@ -76,14 +45,14 @@ def build_model(token_ids, glyphs, seq_lens, vocab_size, embed_dim, rnn_dim, n_c
     decoder_input = tf.reshape(rnn_output, (-1, rnn_dim))
     token_logit = tf.contrib.layers.fully_connected(
         inputs=decoder_input,
-        num_outputs=vocab_size,
+        num_outputs=vocab_size + n_oov_buckets,
         biases_initializer=tf.zeros_initializer(),
         weights_initializer=tf.contrib.layers.xavier_initializer(),
         activation_fn=None,
         scope='token_logit',
     )
 
-    seq_logits = tf.reshape(token_logit, (bs, -1, vocab_size))
+    seq_logits = tf.reshape(token_logit, (bs, -1, vocab_size + n_oov_buckets))
 
     return seq_logits, final_state
 
@@ -122,16 +91,15 @@ def train(train_split_path, val_split_path, dict_path, log_dir, batch_size, voca
     val_seq_lens -= 1
 
     # model
-    embed_dim, rnn_dim = 100, 64
-    n_cnn_layers, n_cnn_filters = 0, 32
+    embed_dim, rnn_dim = 300, 128
     glyph_ph = tf.placeholder('float', shape=[None, None, 24, 24], name='glyph')
     with tf.variable_scope('model'):
-        seq_logits, final_state = build_model(ids[:, :-1], glyph_ph[:, :-1], seq_lens, vocab_size + n_oov_buckets, embed_dim, rnn_dim, n_cnn_layers, n_cnn_filters)
+        seq_logits, final_state = build_model(ids[:, :-1], glyph_ph[:, :-1], seq_lens, vocab_size, n_oov_buckets, embed_dim, rnn_dim)
 
     # validation
     val_glyph_ph = tf.placeholder('float', [None, None, 24, 24], name='val_glyph')
     with tf.variable_scope('model', reuse=True):
-        val_seq_logits, val_final_state = build_model(val_ids[:, :-1], val_glyph_ph[:, :-1], val_seq_lens, vocab_size + n_oov_buckets, embed_dim, rnn_dim, n_cnn_layers, n_cnn_filters)
+        val_seq_logits, val_final_state = build_model(val_ids[:, :-1], val_glyph_ph[:, :-1], val_seq_lens, vocab_size, n_oov_buckets, embed_dim, rnn_dim)
 
     # loss
     mask = tf.sequence_mask(seq_lens, dtype=tf.float32)
@@ -190,8 +158,6 @@ def train(train_split_path, val_split_path, dict_path, log_dir, batch_size, voca
     with tf.Session(config=config) as sess:
         # sess = tfdbg.LocalCLIDebugWrapperSession(sess)
 
-        checkpoint_dir = os.path.join(log_dir, 'checkpoints')
-        saver = tf.train.Saver(tf.global_variables())
         latest_checkpoint_path = tf.train.latest_checkpoint(checkpoint_dir)
         if not latest_checkpoint_path is None:
             print '* restoring model from checkpoint %s' % latest_checkpoint_path
@@ -255,8 +221,6 @@ def train(train_split_path, val_split_path, dict_path, log_dir, batch_size, voca
             coord.join(threads)
         except tf.errors.OutOfRangeError:
             print 'epoch limit reached'
-        except Exception as e:
-            coord.request_stop(e)
 
 if __name__ == '__main__':
     import argparse

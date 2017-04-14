@@ -81,14 +81,15 @@ def train(train_split_path, val_split_path, dict_path, embedding_path, log_dir, 
     # model
     embed_dim, rnn_dim = 100, 64
     # load trained embeddings from checkpoint
+    # trained_embeddings = tf.contrib.framework.load_variable(embedding_path, 'embeddings')
     trained_embeddings = tf.contrib.framework.load_variable(embedding_path, 'model/EmbedSequence/embeddings')
     embeddings = tf.get_variable('embeddings', (vocab_size + n_oov_buckets, embed_dim), 'float', trainable=False, initializer=tf.constant_initializer(trained_embeddings))
     with tf.variable_scope('model'):
-        seq_logits, final_state = build_model(ids[:, :-1], embeddings, seq_lens, vocab_size + n_oov_buckets, embed_dim)
+        seq_logits, final_state = build_model(ids[:, :-1], embeddings, seq_lens, vocab_size + n_oov_buckets, rnn_dim)
 
     # validation
     with tf.variable_scope('model', reuse=True):
-        val_seq_logits, val_final_state = build_model(val_ids[:, :-1], embeddings, val_seq_lens, vocab_size + n_oov_buckets, embed_dim)
+        val_seq_logits, val_final_state = build_model(val_ids[:, :-1], embeddings, val_seq_lens, vocab_size + n_oov_buckets, rnn_dim)
 
     # loss
     mask = tf.sequence_mask(seq_lens, dtype=tf.float32)

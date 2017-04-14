@@ -9,11 +9,19 @@ import os, glob
 from train_lm import get_optimizer, FastSaver
 from render import render_text
 
-def render_glyph(char, shape=(24, 24), font=None, interpolation=cv2.INTER_NEAREST):
+def _render_glyph(char, shape=(24, 24), font=None, interpolation=cv2.INTER_NEAREST):
     glyph = render_text(char, font)
     if np.prod(glyph.shape) == 0:
         return np.zeros(shape, dtype=np.int32)
     return cv2.resize(glyph, shape, interpolation=interpolation)
+
+_glyph_cache = {}
+def render_glyph(char, cache={}):
+    if char in cache:
+        return cache[char]
+    a = _render_glyph(char)
+    cache[char] = a
+    return a
 
 def generate_glyphs(ids_val, lines_val):
     batch_size, max_len = ids_val.shape

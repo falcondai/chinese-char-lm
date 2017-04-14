@@ -3,25 +3,28 @@
 
 import numpy as np
 import tensorflow as tf
+# XXX importing debug module seems to cause segfault
 # from tensorflow.python import debug as tfdbg
 import os, glob
 
-from train_id_cnn_lm import build_input_pipeline, build_model, generate_glyphs
+from train_lm_eval import build_input_pipeline, build_model
 
-def test(test_split_path, dict_path, log_dir, batch_size, vocab_size, n_oov_buckets, print_interval):
+def test(test_split_path, dict_path, embedding_path, log_dir, batch_size, vocab_size, n_oov_buckets, print_interval):
     # token to token-id lookup
     vocabulary = tf.contrib.lookup.string_to_index_table_from_file(dict_path, num_oov_buckets=n_oov_buckets, vocab_size=vocab_size)
 
     # input pipelines
     # test
-    ids, seq_lens, lines = build_input_pipeline(test_split_path, vocabulary, batch_size, shuffle=False, allow_smaller_final_batch=True, num_epochs=1)
+    ids, seq_lens = build_input_pipeline(test_split_path, vocabulary, batch_size, shuffle=False, allow_smaller_final_batch=True, num_epochs=1)
     seq_lens -= 1
 
     # model
-    glyph_ph = tf.placeholder('float', shape=[None, None, 24, 24], name='glyph')
-    embed_dim, rnn_dim = 300, 128
+    embed_dim, rnn_dim = 100, 64
+    # trained_embeddings = tf.contrib.framework.load_variable(embedding_path, 'embeddings')
+    trained_embeddings = tf.contrib.framework.load_variable(embedding_path, 'model/EmbedSequence/embeddings')
+    embeddings = tf.get_variable('embeddings', (vocab_size + n_oov_buckets, embed_dim), 'float', trainable=False, initializer=tf.constant_initializer(trained_embeddings))
     with tf.variable_scope('model'):
-        seq_logits, final_state = build_model(ids[:, :-1], glyph_ph[:, :-1], seq_lens, vocab_size, n_oov_buckets, embed_dim, rnn_dim)
+        seq_logits, final_state = build_model(ids[:, :-1], embeddings, seq_lens, vocab_size + n_oov_buckets, rnn_dim)
 
     # loss
     mask = tf.sequence_mask(seq_lens, dtype=tf.float32)
@@ -59,16 +62,7 @@ def test(test_split_path, dict_path, log_dir, batch_size, vocab_size, n_oov_buck
         i = 0
         try:
             while not coord.should_stop():
-                ids_val, seq_lens_val, lines_val = sess.run([ids, seq_lens, lines])
-
-                # generate glyphs for characters
-                glyphs = generate_glyphs(ids_val, lines_val)
-
-                n, loss_val = sess.run([n_samples, loss], {
-                    ids: ids_val,
-                    seq_lens: seq_lens_val,
-                    glyph_ph: glyphs,
-                })
+                n, loss_val = sess.run([n_samples, loss])
                 total_loss += n * loss_val
                 total_n += n
                 if i % print_interval == 0:
@@ -92,10 +86,11 @@ if __name__ == '__main__':
     parser.add_argument('-b', '--batch-size', type=int, default=16)
     parser.add_argument('-m', '--vocab-size', type=int, default=1000)
     parser.add_argument('-o', '--n-oov-buckets', type=int, default=1)
+    parser.add_argument('-e', '--embedding', default='work/sg4k-1/logs', help='path to the checkpoint dir (or path) containing trained embeddings')
     parser.add_argument('-t', '--test-corpus', default='work/test.txt', help='path to the test split')
     parser.add_argument('--dictionary', default='work/dict.txt', help='path to the dictionary file')
     parser.add_argument('--print-interval', type=int, default=16, help='interval of printing minibatch evaluation results')
 
     args = parser.parse_args()
 
-    test(args.test_corpus, args.dictionary, args.log_dir, args.batch_size, args.vocab_size, args.n_oov_buckets, args.print_interval)
+    test(args.test_corpus, args.dictionary, args.embedding, args.log_dir, args.batch_size, args.vocab_size, args.n_oov_buckets, args.print_interval)
