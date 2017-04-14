@@ -19,7 +19,7 @@ def confusion_matrix(seq_logits, targets, mask):
     )
     return confusion_matrix
 
-def test(test_split_path, dict_path, log_dir, batch_size, vocab_size, n_oov_buckets, print_interval):
+def test(test_split_path, test_tar_path, dict_path, log_dir, batch_size, vocab_size, n_oov_buckets, print_interval):
     # token to token-id lookup
     vocabulary = tf.contrib.lookup.string_to_index_table_from_file(dict_path, num_oov_buckets=n_oov_buckets, vocab_size=vocab_size)
 
