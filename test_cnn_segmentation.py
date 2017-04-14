@@ -13,7 +13,7 @@ def test(test_split_path, test_tar_path, dict_path, log_dir, batch_size, vocab_s
     vocabulary = tf.contrib.lookup.string_to_index_table_from_file(dict_path, num_oov_buckets=n_oov_buckets, vocab_size=vocab_size)
 
     # input pipelines
-    ids, seq_lens, lines, targets = build_input_pipeline(train_split_path, train_tar_path, vocabulary, batch_size, shuffle=True, allow_smaller_final_batch=False, num_epochs=None)
+    ids, seq_lens, lines, targets = build_input_pipeline(test_split_path, test_tar_path, vocabulary, batch_size, shuffle=True, allow_smaller_final_batch=False, num_epochs=None)
 
 
     # model
