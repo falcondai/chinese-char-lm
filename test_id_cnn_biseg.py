@@ -6,7 +6,7 @@ import tensorflow as tf
 # from tensorflow.python import debug as tfdbg
 import os, glob
 
-from train_id_cnn_segmentation import build_input_pipeline, build_model, generate_glyphs
+from train_id_cnn_Biseg import build_input_pipeline, build_model, generate_glyphs
 def confusion_matrix(seq_logits, targets, mask):
     prediction = tf.argmax(seq_logits, axis = -1)
     confusion_matrix = tf.confusion_matrix(

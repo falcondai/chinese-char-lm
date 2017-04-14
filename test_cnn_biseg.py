@@ -6,8 +6,28 @@ import tensorflow as tf
 # from tensorflow.python import debug as tfdbg
 import os, glob
 
-from train_id_cnn_segmentation import build_input_pipeline, build_model, generate_glyphs
-def confusion_matrix(seq_logits, targets, mask):
+from train_cnn_Biseg import build_input_pipeline, build_model, generate_glyphs
+
+def test(test_split_path, test_tar_path, dict_path, log_dir, batch_size, vocab_size, n_oov_buckets, print_interval):
+    # token to token-id lookup
+    vocabulary = tf.contrib.lookup.string_to_index_table_from_file(dict_path, num_oov_buckets=n_oov_buckets, vocab_size=vocab_size)
+
+    # input pipelines
+    ids, seq_lens, lines, targets = build_input_pipeline(test_split_path, test_tar_path, vocabulary, batch_size, shuffle=False, allow_smaller_final_batch=True, num_epochs=1)
+
+
+    # model
+    glyph_ph = tf.placeholder('float', shape=[None, None, 24, 24], name='glyph')
+    embed_dim, rnn_dim = 100, 64
+    n_cnn_layers, n_cnn_filters = 1, 16
+    with tf.variable_scope('model'):
+        seq_logits, final_state = build_model(glyph_ph, seq_lens, vocab_size + n_oov_buckets, embed_dim, rnn_dim, n_cnn_layers, n_cnn_filters)
+
+
+    # loss
+    mask = tf.sequence_mask(seq_lens, dtype=tf.float32)
+    loss = tf.contrib.seq2seq.sequence_loss(seq_logits, targets, mask, average_across_timesteps=True, average_across_batch=True)
+
     prediction = tf.argmax(seq_logits, axis = -1)
     confusion_matrix = tf.confusion_matrix(
         labels = tf.reshape(targets, [-1]),
@@ -17,30 +37,8 @@ def confusion_matrix(seq_logits, targets, mask):
         name="confusion_matrix",
         weights=tf.reshape(mask, [-1])
     )
-    return confusion_matrix
 
-def test(test_split_path, test_tar_path, dict_path, log_dir, batch_size, vocab_size, n_oov_buckets, print_interval):
-    # token to token-id lookup
-    vocabulary = tf.contrib.lookup.string_to_index_table_from_file(dict_path, num_oov_buckets=n_oov_buckets, vocab_size=vocab_size)
-
-    # input pipelines
-    # train
-    ids, seq_lens, lines, targets = build_input_pipeline(test_split_path, test_tar_path, vocabulary, batch_size, shuffle=False, allow_smaller_final_batch=True, num_epochs=1)
-
-    # model
-    glyph_ph = tf.placeholder('float', shape=[None, None, 24, 24], name='glyph')
-    embed_dim, rnn_dim = 100, 64
-    n_cnn_layers, n_cnn_filters = 1, 16
-    with tf.variable_scope('model'):
-        seq_logits, final_state = build_model(ids, glyph_ph, seq_lens, vocab_size + n_oov_buckets, embed_dim, rnn_dim, n_cnn_layers, n_cnn_filters)
-
-
-    # loss
-    mask = tf.sequence_mask(seq_lens, dtype=tf.float32)
-    loss = tf.contrib.seq2seq.sequence_loss(seq_logits, targets, mask, average_across_timesteps=True, average_across_batch=True)
     n_samples = tf.reduce_sum(mask)
-
-    confusion_mat = confusion_matrix(seq_logits, targets, mask)
 
     config = tf.ConfigProto(gpu_options={'allow_growth': True})
     with tf.Session(config=config) as sess:
@@ -72,19 +70,21 @@ def test(test_split_path, test_tar_path, dict_path, log_dir, batch_size, vocab_s
         total_n = 0
         i = 0
         conf_mat = np.zeros((2,2))
-
         try:
             while not coord.should_stop():
                 ids_val, seq_lens_val, lines_val, targets_val = sess.run([ids, seq_lens, lines, targets])
+
                 # generate glyphs for characters
                 glyphs = generate_glyphs(ids_val, lines_val)
+
                 feed = {
                     ids: ids_val,
                     seq_lens: seq_lens_val,
                     glyph_ph: glyphs,
                     targets: targets_val
                 }
-                n, loss_val, confus_matrix= sess.run([n_samples, loss, confusion_mat], feed_dict=feed)
+
+                n, loss_val, confus_matrix = sess.run([n_samples, loss, confusion_matrix], feed_dict=feed)
                 total_loss += n * loss_val
                 total_n += n
                 conf_mat += confus_matrix
