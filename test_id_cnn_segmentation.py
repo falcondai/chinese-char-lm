@@ -34,10 +34,6 @@ def test(test_split_path, dict_path, log_dir, batch_size, vocab_size, n_oov_buck
     with tf.variable_scope('model'):
         seq_logits, final_state = build_model(ids, glyph_ph, seq_lens, vocab_size + n_oov_buckets, embed_dim, rnn_dim, n_cnn_layers, n_cnn_filters)
 
-    # validation
-    val_glyph_ph = tf.placeholder('float', [None, None, 24, 24], name='val_glyph')
-    with tf.variable_scope('model', reuse=True):
-        val_seq_logits, val_final_state = build_model(val_ids, val_glyph_ph, val_seq_lens, vocab_size + n_oov_buckets, embed_dim, rnn_dim, n_cnn_layers, n_cnn_filters)
 
     # loss
     mask = tf.sequence_mask(seq_lens, dtype=tf.float32)
