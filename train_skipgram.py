@@ -76,7 +76,7 @@ def build_glyph_aware_model(center_token_ids, center_token_glyphs, context_token
 
     loss = tf.reduce_mean(tf.nn.nce_loss(weights=nce_weights, biases=nce_biases, labels=nce_labels, inputs=net, num_sampled=nce_noise_samples, num_classes=vocab_size, remove_accidental_hits=False))
 
-    return embeddings, loss
+    return net, glyph_unaware, loss
 
 def get_skip_pairs(ids, seq_lens, lines, max_window, batch_size):
     # yield batches of pairs (id(center_token), id(context_token))
@@ -136,14 +136,14 @@ def train(train_split_path, val_split_path, dict_path, log_dir, batch_size, voca
     center_token_ids_ph = tf.placeholder('int32', shape=[None], name='center_token_id')
     context_token_ids_ph = tf.placeholder('int32', shape=[None], name='context_token_id')
     with tf.variable_scope('model'):
-        embeddings, loss = build_glyph_aware_model(center_token_ids_ph, center_token_glyphs_ph, context_token_ids_ph, vocab_size + n_oov_buckets, embed_dim, n_cnn_layers, n_cnn_filters, n_noisy_samples)
+        embeddings, _, loss = build_glyph_aware_model(center_token_ids_ph, center_token_glyphs_ph, context_token_ids_ph, vocab_size + n_oov_buckets, embed_dim, n_cnn_layers, n_cnn_filters, n_noisy_samples)
 
     # validation
     val_center_token_glyphs_ph = tf.placeholder('float', [None, glyph_width, glyph_width], name='val_glyph')
     val_center_token_ids_ph = tf.placeholder('int32', shape=[None], name='val_center_token_id')
     val_context_token_ids_ph = tf.placeholder('int32', shape=[None], name='val_context_token_id')
     with tf.variable_scope('model', reuse=True):
-        _, val_loss = build_glyph_aware_model(val_center_token_ids_ph, val_center_token_glyphs_ph, val_context_token_ids_ph, vocab_size + n_oov_buckets, embed_dim, n_cnn_layers, n_cnn_filters, n_noisy_samples)
+        _, _, val_loss = build_glyph_aware_model(val_center_token_ids_ph, val_center_token_glyphs_ph, val_context_token_ids_ph, vocab_size + n_oov_buckets, embed_dim, n_cnn_layers, n_cnn_filters, n_noisy_samples)
 
     # loss
     n_samples = tf.cast(tf.size(context_token_ids_ph), 'float')
@@ -277,8 +277,6 @@ def train(train_split_path, val_split_path, dict_path, log_dir, batch_size, voca
             coord.join(threads)
         except tf.errors.OutOfRangeError:
             print 'epoch limit reached'
-        except Exception as e:
-            coord.request_stop(e)
 
 if __name__ == '__main__':
     import argparse
