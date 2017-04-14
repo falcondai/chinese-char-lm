@@ -127,10 +127,12 @@ if __name__ == '__main__':
     parser.add_argument('-b', '--batch-size', type=int, default=16)
     parser.add_argument('-m', '--vocab-size', type=int, default=1000)
     parser.add_argument('-o', '--n-oov-buckets', type=int, default=1)
-    parser.add_argument('-t', '--test-corpus', default='work/test.txt', help='path to the test split')
+    parser.add_argument('-t', '--test-corpus', default='segmentation/pku_test_gold_raw', help='path to the test split')
+    parser.add_argument('--test-target', default='segmentation/pku_test_gold_seg', help='path to the test segmentation answer' )
     parser.add_argument('--dictionary', default='work/dict.txt', help='path to the dictionary file')
     parser.add_argument('--print-interval', type=int, default=16, help='interval of printing minibatch evaluation results')
 
     args = parser.parse_args()
 
-    test(args.test_corpus, args.dictionary, args.log_dir, args.batch_size, args.vocab_size, args.n_oov_buckets, args.print_interval)
+    test(args.test_corpus, args.test_target, args.dictionary, args.log_dir, args.batch_size, args.vocab_size, args.n_oov_buckets, args.print_interval)
+
