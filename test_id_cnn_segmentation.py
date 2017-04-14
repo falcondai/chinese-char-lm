@@ -25,7 +25,7 @@ def test(test_split_path, dict_path, log_dir, batch_size, vocab_size, n_oov_buck
 
     # input pipelines
     # train
-    ids, seq_lens, lines, targets = build_input_pipeline(test_split_path, test_tar_path, vocabulary, batch_size, shuffle=True, allow_smaller_final_batch=False, num_epochs=None)
+    ids, seq_lens, lines, targets = build_input_pipeline(test_split_path, test_tar_path, vocabulary, batch_size, shuffle=False, allow_smaller_final_batch=True, num_epochs=1)
 
     # model
     glyph_ph = tf.placeholder('float', shape=[None, None, 24, 24], name='glyph')
