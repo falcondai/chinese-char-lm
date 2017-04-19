@@ -8,7 +8,7 @@ import tensorflow as tf
 import os, glob
 from train_lm import get_optimizer, FastSaver
 from train_cnn_lm import render_glyph
-from models.glyph_embed import simple_cnn_1, simple_cnn_2, multi_path_cnn_1
+from models.glyph_embed import simple_cnn_1, simple_cnn_2, multi_path_cnn_1, linear
 
 def generate_glyphs(ids_val, lines_val):
     batch_size, max_len = ids_val.shape
@@ -26,16 +26,18 @@ def build_model(token_ids, glyphs, seq_lens, vocab_size, n_oov_buckets, embed_di
 
     # glyph-aware
     glyphs = tf.reshape(glyphs, (-1, 24, 24, 1))
-    net = simple_cnn_2.build_model(glyphs, embed_dim)
+    # linear glyph embedder
+    net = linear.build_model(glyphs, embed_dim)
 
     glyph_aware = tf.reshape(net, (bs, -1, embed_dim))
 
     in_vocab = tf.expand_dims(tf.cast(tf.less(token_ids, vocab_size), 'float'), -1)
-    rnn_input = glyph_unaware + in_vocab * glyph_aware
-    # mixed4k-tb0
+    # msr-m1, msr-m0, msr-l0
+    # rnn_input = glyph_unaware + in_vocab * glyph_aware
+    # msr-i0
     # rnn_input = glyph_unaware + 0. * glyph_aware
-    # mixed4k-c0
-    # rnn_input = 0. * glyph_unaware + glyph_aware
+    # msr-l1, msr-c2
+    rnn_input = 0. * glyph_unaware + glyph_aware
 
     # rnn
     cell = tf.contrib.rnn.GRUBlockCell(rnn_dim)
