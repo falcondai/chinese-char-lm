@@ -74,7 +74,7 @@ def build_model(token_ids, glyphs, seq_lens, vocab_size, embed_dim, rnn_dim, n_c
 
     seq_logits = tf.reshape(token_logit, (bs, -1, 2))
 
-    return seq_logits, final_state
+    return seq_logits, final_state, glyph_unaware, glyph_aware
 
 
 

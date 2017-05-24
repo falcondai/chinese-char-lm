@@ -85,7 +85,7 @@ def build_model(token_ids, glyphs, seq_lens, vocab_size, embed_dim, rnn_dim, n_c
 
     seq_logits = tf.reshape(token_logit, (bs, -1, vocab_size))
 
-    return seq_logits, final_state
+    return seq_logits, final_state, glyph_unaware, glyph_aware
 
 def build_input_pipeline(corpus_path, vocabulary, batch_size, shuffle, allow_smaller_final_batch, num_epochs):
     # `corpus_path` could be a glob pattern
