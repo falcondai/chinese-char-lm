@@ -10,6 +10,8 @@ from train_id_cnn_lm import render_glyph, build_model
 from models.glyph_embed import multi_path_cnn_1
 from train_id_cnn_Biseg_cpu import build_model as biseg_build_model
 from models.glyph_embed import simple_cnn_2
+from train_id_cnn_seg_cpu import build_model as seg_build_model
+import cPickle as pickle
 
 def rebuild_simple_model(token_ids, glyphs, seq_lens, vocab_size, embed_dim, rnn_dim, n_cnn_layers, n_cnn_filters, n_oov_buckets):
     # encoder
@@ -119,6 +121,10 @@ def compute_embeddings(checkpoint_dir, dict_path, vocab_size, n_oov_buckets, emb
         elif task == 'biseg':
             n_cnn_layers, n_cnn_filters = 1, 16 
             _, _, id_emb, glyph_emb = biseg_build_model(token_ids = token_ids_ph, glyphs= glyph_ph, seq_lens = seq_lens, vocab_size = vocab_size + n_oov_buckets, embed_dim = embed_dim, rnn_dim = rnn_dim, n_cnn_layers = n_cnn_layers, n_cnn_filters = n_cnn_filters)
+        elif task == 'seg':
+            n_cnn_layers, n_cnn_filters = 1, 16
+            _, _, id_emb, glyph_emb = seg_build_model(token_ids = token_ids_ph, glyphs= glyph_ph, seq_lens = seq_lens, vocab_size = vocab_size + n_oov_buckets, embed_dim = embed_dim, rnn_dim = rnn_dim, n_cnn_layers = n_cnn_layers, n_cnn_filters = n_cnn_filters)
+
         elif task == 'lm_simple':
             n_cnn_layers, n_cnn_filters = 1, 16
 
@@ -145,6 +151,8 @@ def compute_embeddings(checkpoint_dir, dict_path, vocab_size, n_oov_buckets, emb
         # wemb_fc_bias = graph.get_tensor_by_name('model/embedding_fc/biases:0')
         # wemb_matrix = graph.get_tensor_by_name('model/EmbedSequence/embeddings:0')
 
+        id_norm_ls = []
+        glyph_norm_ls = [] 
 
         embeddings_val = np.zeros((vocab_size + n_oov_buckets, embed_dim))
         with open(dict_path, 'r') as fhandle:
@@ -158,11 +166,20 @@ def compute_embeddings(checkpoint_dir, dict_path, vocab_size, n_oov_buckets, emb
                 glyph_norm = np.linalg.norm(glyph_emb_val)
                 id_emb_accu += id_norm
                 glyph_emb_accu += glyph_norm
+                id_norm_ls.append(id_norm)
+                glyph_norm_ls.append(glyph_norm)
                 id_glyph_ratio_acc.append(id_norm / glyph_norm)
 
 
-        id_emb_ave_norm = id_emb_accu / 4001.0
-        glyph_emb_ave_norm = glyph_emb_accu / 4001.0
+        id_emb_ave_norm = id_emb_accu / (vocab_size + n_oov_buckets)
+        glyph_emb_ave_norm = glyph_emb_accu / (vocab_size + n_oov_buckets)
+
+
+        with open('./id_norm_ls.pkl', 'wb') as f:
+            pickle.dump(id_norm_ls, f)
+
+        with open('./glyph_norm_ls.pkl', 'wb') as f:
+            pickle.dump(glyph_norm_ls, f)
 
         print "id embedding average norm: ", id_emb_ave_norm
         print "glyph embedding average norm: ", glyph_emb_ave_norm

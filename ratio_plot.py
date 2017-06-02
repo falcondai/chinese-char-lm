@@ -6,6 +6,9 @@ from matplotlib.font_manager import FontProperties
 import codecs
 from vocabulary_builder import Vocabulary_Builder
 from render import render_text
+import cPickle as pickle
+
+
 ratio_ls = np.loadtxt('./ratio.txt', dtype=float,  delimiter=',')
 
 char_ratio_ls = []
@@ -94,7 +97,34 @@ plt.ylabel('average grayscale of glyph', fontsize=18)
 plt.show()
 
 # =============================
+# =============================
+# gray glyphnorm scatter
 
+grayscale_dict = {}
+
+for i in char_ratio_ls:
+	key = i[0].encode('utf8')
+	glyph = render_text(key)
+	ave_gray = np.sum(glyph) / (24.0*24.0)
+	grayscale_dict[key] = ave_gray
+
+with open('./glyph_norm_ls.pkl') as f:
+	glyph_norm_ls = pickle.load(f)
+
+gray_norm_ls = []
+for index, i in enumerate(char_ratio_ls):
+	key = i[0].encode('utf8')
+
+	if key != '<P>' and key != '</P>':
+		gray_norm_ls.append((glyph_norm_ls[index], grayscale_dict[key]))
+
+xx, yy = zip(*gray_norm_ls)
+plt.scatter(xx, yy, s=2)
+plt.xlabel('gray scale', fontsize=18)
+plt.ylabel('glyph embedding norm', fontsize=18)
+plt.show()
+
+# =============================
 x = zip(*char_ratio_ls)[1]
 # the histogram of the data
 plt.hist(x, bins='auto')  # plt.hist passes it's arguments to np.histogram
@@ -106,3 +136,4 @@ plt.ylabel('character count')
 # l = plt.plot(bins, y, 'r--', linewidth=1)
 
 plt.show()
+
