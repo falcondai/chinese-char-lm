@@ -31,12 +31,13 @@ class Vocabulary_Builder(object):
         # put special symbols in the front
         self.vocabulary_dict[self.start_tag] = sys.maxint
         self.vocabulary_dict[self.end_tag] = sys.maxint
-        sorted_dict = sorted(self.vocabulary_dict.items(), key=operator.itemgetter(1), reverse=True)
+        self.sorted_dict = sorted(self.vocabulary_dict.items(), key=operator.itemgetter(1), reverse=True)
 
         # 3. saving dictionary to a txt file
+    def save(self):
         print "saving..."
         with open(self.save_vocabulary_path, 'wb') as f:
-            for char, freq in sorted_dict:
+            for char, freq in self.sorted_dict:
                 f.write(char)
                 f.write('\n')
         print "done"

@@ -8,6 +8,8 @@ import tensorflow as tf
 import os, glob
 from train_id_cnn_lm import render_glyph, build_model
 from models.glyph_embed import multi_path_cnn_1
+from train_id_cnn_Biseg_cpu import build_model as biseg_build_model
+
 def rebuild_model(token_ids, glyphs, seq_lens, vocab_size, embed_dim, rnn_dim, n_cnn_layers, n_cnn_filters):
     # encoder
     # encoder
@@ -127,6 +129,9 @@ def compute_embeddings(checkpoint_dir, dict_path, vocab_size, n_oov_buckets, emb
             _, _, id_emb, glyph_emb = build_model(token_ids = token_ids_ph, glyphs = glyph_ph, seq_lens = seq_lens, vocab_size = vocab_size + n_oov_buckets, embed_dim = embed_dim, rnn_dim = rnn_dim, n_cnn_layers = n_cnn_layers, n_cnn_filters = n_cnn_filters)
         elif task == 'lm_multi':
             id_emb, glyph_emb = rebuild_multi_path_model(token_ids = token_ids_ph, glyphs = glyph_ph, seq_lens = seq_lens, vocab_size = vocab_size, embed_dim = embed_dim, rnn_dim = rnn_dim, n_oov_buckets = n_oov_buckets)
+        elif task == 'biseg':
+            n_cnn_layers, n_cnn_filters = 1, 16 
+            _, _, id_emb, glyph_emb = biseg_build_model(token_ids = token_ids_ph, glyphs= glyph_ph, seq_lens = seq_lens, vocab_size = vocab_size + n_oov_buckets, embed_dim = embed_dim, rnn_dim = rnn_dim, n_cnn_layers = n_cnn_layers, n_cnn_filters = n_cnn_filters)
         else:
             n_cnn_layers, n_cnn_filters = 1, 16
 
