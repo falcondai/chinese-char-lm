@@ -1,43 +1,32 @@
 #!/usr/bin/env python
 
 import numpy as np
-import cv2
+# import cv2
 import tensorflow as tf
-from tensorflow.contrib.tensorboard.plugins import projector
+# from tensorflow.contrib.tensorboard.plugins import projector
 # from tensorflow.python import debug as tfdbg
 import os, glob
-from train_id_cnn_lm import generate_glyphs, render_glyph
+from train_id_cnn_lm import render_glyph
 
-def rebuild_model(token_ids, glyphs, seq_lens, vocab_size, embed_dim, n_cnn_layers, n_cnn_filters, wemb):
+def rebuild_model(token_ids, glyphs, seq_lens, vocab_size, embed_dim, rnn_dim, n_cnn_layers, n_cnn_filters):
+    # encoder
     # encoder
     bs = tf.size(seq_lens)
-    wemb = wemb
-    glyph_unaware = tf.nn.embedding_lookup(wemb, token_ids)
+    glyph_unaware = tf.contrib.layers.embed_sequence(token_ids, vocab_size, embed_dim)
 
-    # glyph-aware
     net = glyphs / 255.
     net = tf.reshape(net, (-1, 24, 24, 1))
-    net = tf.contrib.layers.convolution2d(
-        inputs=net,
-        num_outputs=32,
-        kernel_size=(7, 7),
-        stride=(2, 2),
-        activation_fn=tf.nn.relu,
-        biases_initializer=tf.zeros_initializer(),
-        weights_initializer=tf.contrib.layers.xavier_initializer_conv2d(),
-        scope='conv1',
-    )
-
-    # net = tf.contrib.layers.convolution2d(
-    #     inputs=net,
-    #     num_outputs=16,
-    #     kernel_size=(5, 5),
-    #     stride=(2, 2),
-    #     activation_fn=tf.nn.relu,
-    #     biases_initializer=tf.zeros_initializer(),
-    #     weights_initializer=tf.contrib.layers.xavier_initializer_conv2d(),
-    #     scope='conv2',
-    # )
+    for i in xrange(n_cnn_layers):
+        net = tf.contrib.layers.convolution2d(
+            inputs=net,
+            num_outputs=n_cnn_filters,
+            kernel_size=(5, 5),
+            stride=(2, 2),
+            activation_fn=tf.nn.elu,
+            biases_initializer=tf.zeros_initializer(),
+            weights_initializer=tf.contrib.layers.xavier_initializer_conv2d(),
+            scope='conv%i' % (i+1),
+        )
 
     net = tf.contrib.layers.flatten(net)
     net = tf.contrib.layers.fully_connected(
@@ -48,15 +37,36 @@ def rebuild_model(token_ids, glyphs, seq_lens, vocab_size, embed_dim, n_cnn_laye
         activation_fn=None,
         scope='embedding_fc',
     )
-
+    
     glyph_aware = tf.reshape(net, (bs, -1, embed_dim))
 
-    return glyph_unglyph_aware
+    rnn_input = glyph_unaware + glyph_aware
+
+    # rnn
+    cell = tf.contrib.rnn.GRUBlockCell(rnn_dim)
+    rnn_output, final_state = tf.nn.dynamic_rnn(cell, rnn_input, seq_lens, cell.zero_state(bs, 'float'))
+
+    # decoder
+    decoder_input = tf.reshape(rnn_output, (-1, rnn_dim))
+    token_logit = tf.contrib.layers.fully_connected(
+        inputs=decoder_input,
+        num_outputs=2,
+        biases_initializer=tf.zeros_initializer(),
+        weights_initializer=tf.contrib.layers.xavier_initializer(),
+        activation_fn=None,
+        scope='token_logit',
+    )
+
+    seq_logits = tf.reshape(token_logit, (bs, -1, 2))
+
+    return glyph_unaware, glyph_aware
 
 def compute_embeddings(checkpoint_dir, dict_path, vocab_size, n_oov_buckets, embed_dim):
+
+        
     glyph_width = 24
 
-    token_id_ph = tf.placeholder('int32', shape=[None], name='center_token_id')
+    token_ids_ph = tf.placeholder('int32', shape=[None, None], name='center_token_id')
 
     # model
     glyph_ph = tf.placeholder('float', shape=[None, None, 24, 24], name='glyph')
@@ -64,52 +74,46 @@ def compute_embeddings(checkpoint_dir, dict_path, vocab_size, n_oov_buckets, emb
 
     seq_lens = tf.stack([tf.shape(token_ids_ph)[0]])
 
-    id_token_vocabulary = tf.contrib.lookup.index_to_string_table_from_file(dict_path, vocab_size=vocab_size)
+    # id_token_vocabulary = tf.contrib.lookup.index_to_string_table_from_file(dict_path, vocab_size=vocab_size)
 
     embed_dim, rnn_dim = 100, 64
-    n_cnn_layers, n_cnn_filters = 0, 32
-    saver = tf.train.Saver()
+    n_cnn_layers, n_cnn_filters = 1, 16
     seq_lens = [1]
     with tf.variable_scope('model'):
-        id_emb, glyph_emb = rebuild_model(token_ids = token_id_ph, glyphs = glyph_ph, seq_lens = seq_lens, vocab_size = vocab_size, embed_dim = embed_dim, n_cnn_layers = n_cnn_layers, n_cnn_filters = n_cnn_filters)
+        id_emb, glyph_emb = rebuild_model(token_ids = token_ids_ph, glyphs = glyph_ph, seq_lens = seq_lens, vocab_size = vocab_size+n_oov_buckets, embed_dim = embed_dim, n_cnn_layers = n_cnn_layers, n_cnn_filters = n_cnn_filters, rnn_dim = rnn_dim)
 
-    # if not os.path.exists(embeddings_checkpoint_dir):
-    #     os.makedirs(embeddings_checkpoint_dir)
 
-    # # visualize embeddings
-    # projector_config = projector.ProjectorConfig()
-    # embed = projector_config.embeddings.add()
-    # embed.tensor_name = embeddings.name
-    # metadata_path = os.path.join(embeddings_checkpoint_dir, 'projector_metadata.txt')
-    # embed.metadata_path = metadata_path 
-    # Load the VGG-16 model in the default graph
-    latest_checkpoint_path = tf.train.latest_checkpoint(checkpoint_dir)
-    print '* restoring model from checkpoint %s' % latest_checkpoint_path
-    saver.restore(sess, latest_checkpoint_path)
 
-    saver = tf.train.import_meta_graph(checkpoint_dir)
-    # Access the graph
-    graph = tf.get_default_graph()
-
-    # Retrieve variables
-    conv_bias = graph.get_tensor_by_name('model/conv1/biases:0')
-    conv_weight = graph.get_tensor_by_name('model/conv1/weights:0')
-    wemb_fc_weight = graph.get_tensor_by_name('model/embedding_fc/weights:0')
-    wemb_fc_bias = graph.get_tensor_by_name('model/embedding_fc/biases:0')
-    wemb_matrix = graph.get_tensor_by_name('model/EmbedSequence/embeddings:0')
-    
     config = tf.ConfigProto(gpu_options={'allow_growth': True})
-    with tf.Session(config=config) as sess:
+    saver = tf.train.Saver()
 
-        id_token_dict = id_token_vocabulary.eval()
+    with tf.Session(config=config) as sess:
+        # saver = tf.train.import_meta_graph(checkpoint_dir)
+
+        latest_checkpoint_path = tf.train.latest_checkpoint(os.path.dirname(checkpoint_dir))
+        print '* restoring model from checkpoint %s' % latest_checkpoint_path
+        saver.restore(sess, latest_checkpoint_path)
+
+        # # Access the graph
+        # graph = tf.get_default_graph()
+
+        # # Retrieve variables
+        # conv_bias = graph.get_tensor_by_name('model/conv1/biases:0')
+        # conv_weight = graph.get_tensor_by_name('model/conv1/weights:0')
+        # wemb_fc_weight = graph.get_tensor_by_name('model/embedding_fc/weights:0')
+        # wemb_fc_bias = graph.get_tensor_by_name('model/embedding_fc/biases:0')
+        # wemb_matrix = graph.get_tensor_by_name('model/EmbedSequence/embeddings:0')
+
 
         embeddings_val = np.zeros((vocab_size + n_oov_buckets, embed_dim))
-        for i in range(vocab_size):
-            token = sess.run([])
-            feed_dictionary = {token_ids_ph:i, glyph_ph:render_glyph(id_token_dict[i].decode('utf8'), shape=(24, 24))}
+        with open(dict_path, 'r') as fhandle:
+            for i, line in enumerate(fhandle):
+                if i > 4000:
+                    break
+                feed_dictionary = {token_ids_ph:[[i]], glyph_ph:[[render_glyph(line.strip().decode('utf8'))]]}
 
-            sess.run([id_emb, glyph_emb], feed_dict=feed_dictionary)
-            print id_emb, glyph_emb
+                id_emb_val, glyph_emb_val = sess.run([id_emb, glyph_emb], feed_dict=feed_dictionary)
+                
         # embed_saver.save(sess, os.path.join(embeddings_checkpoint_dir, 'embeddings'))
 
 if __name__ == '__main__':
