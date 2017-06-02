@@ -9,40 +9,27 @@ import os, glob
 from train_id_cnn_lm import render_glyph, build_model
 from models.glyph_embed import multi_path_cnn_1
 from train_id_cnn_Biseg_cpu import build_model as biseg_build_model
+from models.glyph_embed import simple_cnn_2
 
-def rebuild_model(token_ids, glyphs, seq_lens, vocab_size, embed_dim, rnn_dim, n_cnn_layers, n_cnn_filters):
-    # encoder
+def rebuild_simple_model(token_ids, glyphs, seq_lens, vocab_size, embed_dim, rnn_dim, n_cnn_layers, n_cnn_filters, n_oov_buckets):
     # encoder
     bs = tf.size(seq_lens)
-    glyph_unaware = tf.contrib.layers.embed_sequence(token_ids, vocab_size, embed_dim)
+    glyph_unaware = tf.contrib.layers.embed_sequence(token_ids, vocab_size + n_oov_buckets, embed_dim)
 
-    net = glyphs / 255.
-    net = tf.reshape(net, (-1, 24, 24, 1))
-    for i in xrange(n_cnn_layers):
-        net = tf.contrib.layers.convolution2d(
-            inputs=net,
-            num_outputs=n_cnn_filters,
-            kernel_size=(5, 5),
-            stride=(2, 2),
-            activation_fn=tf.nn.elu,
-            biases_initializer=tf.zeros_initializer(),
-            weights_initializer=tf.contrib.layers.xavier_initializer_conv2d(),
-            scope='conv%i' % (i+1),
-        )
+    # glyph-aware
+    glyphs = tf.reshape(glyphs, (-1, 24, 24, 1))
+    # linear glyph embedder
+    net = simple_cnn_2.build_model(glyphs, embed_dim)
 
-    net = tf.contrib.layers.flatten(net)
-    net = tf.contrib.layers.fully_connected(
-        inputs=net,
-        num_outputs=embed_dim,
-        biases_initializer=tf.zeros_initializer(),
-        weights_initializer=tf.contrib.layers.xavier_initializer(),
-        activation_fn=None,
-        scope='embedding_fc',
-    )
-    
     glyph_aware = tf.reshape(net, (bs, -1, embed_dim))
 
-    rnn_input = glyph_unaware + glyph_aware
+    in_vocab = tf.expand_dims(tf.cast(tf.less(token_ids, vocab_size), 'float'), -1)
+    # msr-m1, msr-m0, msr-l0
+    # rnn_input = glyph_unaware + in_vocab * glyph_aware
+    # msr-i0
+    # rnn_input = glyph_unaware + 0. * glyph_aware
+    # msr-l1, msr-c2
+    rnn_input = 0. * glyph_unaware + glyph_aware
 
     # rnn
     cell = tf.contrib.rnn.GRUBlockCell(rnn_dim)
@@ -52,16 +39,16 @@ def rebuild_model(token_ids, glyphs, seq_lens, vocab_size, embed_dim, rnn_dim, n
     decoder_input = tf.reshape(rnn_output, (-1, rnn_dim))
     token_logit = tf.contrib.layers.fully_connected(
         inputs=decoder_input,
-        num_outputs=2,
+        num_outputs=vocab_size + n_oov_buckets,
         biases_initializer=tf.zeros_initializer(),
         weights_initializer=tf.contrib.layers.xavier_initializer(),
         activation_fn=None,
         scope='token_logit',
     )
 
-    seq_logits = tf.reshape(token_logit, (bs, -1, 2))
+    seq_logits = tf.reshape(token_logit, (bs, -1, vocab_size + n_oov_buckets))
 
-    return glyph_unaware, glyph_aware
+    return seq_logits, final_state, glyph_unaware, glyph_aware
 
 def rebuild_multi_path_model(token_ids, glyphs, seq_lens, vocab_size, embed_dim, rnn_dim, n_oov_buckets):
     bs = tf.size(seq_lens)
@@ -132,10 +119,10 @@ def compute_embeddings(checkpoint_dir, dict_path, vocab_size, n_oov_buckets, emb
         elif task == 'biseg':
             n_cnn_layers, n_cnn_filters = 1, 16 
             _, _, id_emb, glyph_emb = biseg_build_model(token_ids = token_ids_ph, glyphs= glyph_ph, seq_lens = seq_lens, vocab_size = vocab_size + n_oov_buckets, embed_dim = embed_dim, rnn_dim = rnn_dim, n_cnn_layers = n_cnn_layers, n_cnn_filters = n_cnn_filters)
-        else:
+        elif task == 'lm_simple':
             n_cnn_layers, n_cnn_filters = 1, 16
 
-            id_emb, glyph_emb = rebuild_model(token_ids = token_ids_ph, glyphs = glyph_ph, seq_lens = seq_lens, vocab_size = vocab_size+n_oov_buckets, embed_dim = embed_dim, n_cnn_layers = n_cnn_layers, n_cnn_filters = n_cnn_filters, rnn_dim = rnn_dim)
+            _, _, id_emb, glyph_emb = rebuild_simple_model(token_ids = token_ids_ph, glyphs = glyph_ph, seq_lens = seq_lens, vocab_size = vocab_size, embed_dim = embed_dim, n_cnn_layers = n_cnn_layers, n_cnn_filters = n_cnn_filters, rnn_dim = rnn_dim, n_oov_buckets = n_oov_buckets)
 
 
     config = tf.ConfigProto(gpu_options={'allow_growth': True})

@@ -18,6 +18,8 @@ with open('./work/dict.txt', 'r') as fhandle:
 # sort in-place from highest to lowest
 char_ratio_ls.sort(key=lambda x: x[1], reverse=True) 
 
+for char, ratio in char_ratio_ls:
+    print char.encode('utf8'), ratio
 # bar chart print script #
 # ===========================
 
@@ -60,41 +62,47 @@ for i in char_ratio_ls:
 		if key != '<P>' and key != '</P>':
 			ratio_freq_ls.append((i[1], vb[key]))
 
-print ratio_freq_ls
 xx, yy = zip(*ratio_freq_ls)
-plt.scatter(xx, np.log(yy))
+plt.scatter(xx, np.log(yy), s=2)
+plt.xlabel('id v.s. glyph embedding average norm ratio', fontsize=18)
+plt.ylabel('log frequency count', fontsize=18)
+
 plt.show()
 # =============================
 
 # =============================
 # grayscale ratio scatter
 
-# grayscale_dict = {}
+grayscale_dict = {}
 
-# for i in char_ratio_ls:
-# 	key = i[0].encode('utf8')
-# 	glyph = render_text(key)
-# 	ave_gray = np.sum(glyph) / (24.0*24.0)
-# 	grayscale_dict[key] = ave_gray
+for i in char_ratio_ls:
+	key = i[0].encode('utf8')
+	glyph = render_text(key)
+	ave_gray = np.sum(glyph) / (24.0*24.0)
+	grayscale_dict[key] = ave_gray
 
-# ratio_gray_ls = []
-# for i in char_ratio_ls:
-# 	key = i[0].encode('utf8')
-# 	if key != '<P>' and key != '</P>':
-# 		ratio_gray_ls.append((i[1], grayscale_dict[key]))
+ratio_gray_ls = []
+for i in char_ratio_ls:
+	key = i[0].encode('utf8')
+	if key != '<P>' and key != '</P>':
+		ratio_gray_ls.append((i[1], grayscale_dict[key]))
 
-# print ratio_gray_ls
-# xx, yy = zip(*ratio_gray_ls)
-# plt.scatter(xx, yy)
-# plt.show()
+xx, yy = zip(*ratio_gray_ls)
+plt.scatter(xx, yy, s=2)
+plt.xlabel('id v.s. glyph embedding average norm ratio', fontsize=18)
+plt.ylabel('average grayscale of glyph', fontsize=18)
+plt.show()
+
 # =============================
 
-# x = zip(*char_ratio_ls)[1]
-# # the histogram of the data
-# plt.hist(x, bins='auto')  # plt.hist passes it's arguments to np.histogram
-# plt.title("Histogram of ratio")
-# # add a 'best fit' line
-# # y = mlab.normpdf( bins, mu, sigma)
-# # l = plt.plot(bins, y, 'r--', linewidth=1)
+x = zip(*char_ratio_ls)[1]
+# the histogram of the data
+plt.hist(x, bins='auto')  # plt.hist passes it's arguments to np.histogram
+plt.title("Histogram of ratio")
+plt.xlabel('id v.s. glyph embedding norm ratio', fontsize = 14)
+plt.ylabel('character count')
+# add a 'best fit' line
+# y = mlab.normpdf( bins, mu, sigma)
+# l = plt.plot(bins, y, 'r--', linewidth=1)
 
-# plt.show()
+plt.show()
