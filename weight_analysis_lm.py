@@ -6,7 +6,7 @@ import tensorflow as tf
 # from tensorflow.contrib.tensorboard.plugins import projector
 # from tensorflow.python import debug as tfdbg
 import os, glob
-from train_id_cnn_lm import render_glyph
+from train_id_cnn_lm import render_glyph, build_model
 
 def rebuild_model(token_ids, glyphs, seq_lens, vocab_size, embed_dim, rnn_dim, n_cnn_layers, n_cnn_filters):
     # encoder
@@ -22,7 +22,7 @@ def rebuild_model(token_ids, glyphs, seq_lens, vocab_size, embed_dim, rnn_dim, n
             num_outputs=n_cnn_filters,
             kernel_size=(5, 5),
             stride=(2, 2),
-            activation_fn=tf.nn.elu,
+            activation_fn=tf.nn.relu,
             biases_initializer=tf.zeros_initializer(),
             weights_initializer=tf.contrib.layers.xavier_initializer_conv2d(),
             scope='conv%i' % (i+1),
@@ -61,7 +61,7 @@ def rebuild_model(token_ids, glyphs, seq_lens, vocab_size, embed_dim, rnn_dim, n
 
     return glyph_unaware, glyph_aware
 
-def compute_embeddings(checkpoint_dir, dict_path, vocab_size, n_oov_buckets, embed_dim):
+def compute_embeddings(checkpoint_dir, dict_path, vocab_size, n_oov_buckets, embed_dim, rnn_dim, task):
 
         
     glyph_width = 24
@@ -76,11 +76,18 @@ def compute_embeddings(checkpoint_dir, dict_path, vocab_size, n_oov_buckets, emb
 
     # id_token_vocabulary = tf.contrib.lookup.index_to_string_table_from_file(dict_path, vocab_size=vocab_size)
 
-    embed_dim, rnn_dim = 100, 64
-    n_cnn_layers, n_cnn_filters = 1, 16
+    embed_dim, rnn_dim = embed_dim, rnn_dim
     seq_lens = [1]
+
     with tf.variable_scope('model'):
-        id_emb, glyph_emb = rebuild_model(token_ids = token_ids_ph, glyphs = glyph_ph, seq_lens = seq_lens, vocab_size = vocab_size+n_oov_buckets, embed_dim = embed_dim, n_cnn_layers = n_cnn_layers, n_cnn_filters = n_cnn_filters, rnn_dim = rnn_dim)
+        if task == 'lm':
+            n_cnn_layers, n_cnn_filters = 0, 32
+
+            _, _, id_emb, glyph_emb = build_model(token_ids = token_ids_ph, glyphs = glyph_ph, seq_lens = seq_lens, vocab_size = vocab_size + n_oov_buckets, embed_dim = embed_dim, rnn_dim = rnn_dim, n_cnn_layers = n_cnn_layers, n_cnn_filters = n_cnn_filters)
+        else:
+            n_cnn_layers, n_cnn_filters = 1, 16
+
+            id_emb, glyph_emb = rebuild_model(token_ids = token_ids_ph, glyphs = glyph_ph, seq_lens = seq_lens, vocab_size = vocab_size+n_oov_buckets, embed_dim = embed_dim, n_cnn_layers = n_cnn_layers, n_cnn_filters = n_cnn_filters, rnn_dim = rnn_dim)
 
 
 
@@ -127,7 +134,10 @@ if __name__ == '__main__':
     parser.add_argument('-o', '--n-oov-buckets', type=int, default=1)
     parser.add_argument('--embed-dim', type=int, default=100)
     parser.add_argument('--dictionary', default='work/dict.txt', help='path to the dictionary file')
+    parser.add_argument('--embed_dim', type=int, default=100)
+    parser.add_argument('--rnn_dim', type=int, default=64)
+    parser.add_argument('--task', type=str, default='seg')
 
     args = parser.parse_args()
 
-    compute_embeddings(args.import_log_dir, args.dictionary, args.vocab_size, args.n_oov_buckets, args.embed_dim)
+    compute_embeddings(args.import_log_dir, args.dictionary, args.vocab_size, args.n_oov_buckets, args.embed_dim, args.rnn_dim, args.task)
