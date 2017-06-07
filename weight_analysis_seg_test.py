@@ -11,6 +11,9 @@ from models.glyph_embed import multi_path_cnn_1
 from train_id_cnn_Biseg_cpu import build_model as biseg_build_model
 from models.glyph_embed import simple_cnn_2
 from train_id_cnn_seg_cpu import build_model as seg_build_model
+from train_cnn_lm import build_model as pure_CNN_build_model
+from train_lm import build_model as pure_ID_build_model
+
 import cPickle as pickle
 
 def rebuild_simple_model(token_ids, glyphs, seq_lens, vocab_size, embed_dim, rnn_dim, n_cnn_layers, n_cnn_filters, n_oov_buckets):
