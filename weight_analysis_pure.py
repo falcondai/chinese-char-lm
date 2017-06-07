@@ -9,8 +9,11 @@ import os, glob
 from train_id_cnn_lm import render_glyph, build_model
 from models.glyph_embed import multi_path_cnn_1
 from models.glyph_embed import simple_cnn_2
-from train_cnn_lm import build_model as pure_CNN_build_model
-from train_lm import build_model as pure_ID_build_model
+from train_cnn_lm import build_model as pure_CNN_lm_build_model
+from train_lm import build_model as pure_ID_lm_build_model
+from train_seg_cpu import build_model as pure_ID_seg_build_model
+from train_cnn_seg_cpu import build_model as pure_CNN_seg_build_model
+from train_cnn_Biseg_cpu import build_model as pure_CNN_biseg_build_model
 
 import cPickle as pickle
 
@@ -35,15 +38,26 @@ def compute_embeddings(checkpoint_dir, dict_path, vocab_size, n_oov_buckets, emb
 
     embed_dim, rnn_dim = embed_dim, rnn_dim
     seq_lens = [1]
+    vocab_size = vocab_size + n_oov_buckets
+    n_cnn_layers, n_cnn_filters = 1, 16
     with tf.variable_scope('model'):
-        if task == 'pure_id':
-            _, _, id_emb = pure_ID_build_model(token_ids = token_ids_ph, seq_lens = seq_lens, vocab_size = vocab_size, embed_dim = embed_dim, rnn_dim = rnn_dim)
+        if task == 'pure_id_lm':
+            _, _, id_emb = pure_ID_lm_build_model(token_ids = token_ids_ph, seq_lens = seq_lens, vocab_size = vocab_size, embed_dim = embed_dim, rnn_dim = rnn_dim)
             glyph_emb = tf.zeros_like(id_emb)
 
-        elif task == 'pure_cnn':
-            _, _, glyph_emb = pure_CNN_build_model(glyphs = glyph_ph, seq_lens = seq_lens, vocab_size = vocab_size, embed_dim = embed_dim, rnn_dim = rnn_dim, n_cnn_layers = n_cnn_layers, n_cnn_filters = n_cnn_filters)
+        elif task == 'pure_cnn_lm':
+            _, _, glyph_emb = pure_CNN_lm_build_model(glyphs = glyph_ph, seq_lens = seq_lens, vocab_size = vocab_size, embed_dim = embed_dim, rnn_dim = rnn_dim, n_cnn_layers = n_cnn_layers, n_cnn_filters = n_cnn_filters)
             id_emb = tf.zeros_like(glyph_emb)
+        elif task == 'pure_id_seg':
+            _, _, id_emb = pure_ID_seg_build_model(token_ids = token_ids_ph, seq_lens = seq_lens, vocab_size = vocab_size, embed_dim = embed_dim, rnn_dim = rnn_dim)
+            glyph_emb = tf.zeros_like(id_emb)
 
+        elif task == 'pure_cnn_seg':
+            _, _, glyph_emb = pure_CNN_seg_build_model(glyphs = glyph_ph, seq_lens = seq_lens, vocab_size = vocab_size, embed_dim = embed_dim, rnn_dim = rnn_dim, n_cnn_layers = n_cnn_layers, n_cnn_filters = n_cnn_filters)
+            id_emb = tf.zeros_like(glyph_emb)
+        elif task == 'pure_cnn_biseg':
+            _, _, glyph_emb = pure_CNN_biseg_build_model(glyphs = glyph_ph, seq_lens = seq_lens, vocab_size = vocab_size, embed_dim = embed_dim, rnn_dim = rnn_dim, n_cnn_layers = n_cnn_layers, n_cnn_filters = n_cnn_filters)
+            id_emb = tf.zeros_like(glyph_emb)
 
     config = tf.ConfigProto(gpu_options={'allow_growth': True})
     saver = tf.train.Saver()
