@@ -7,7 +7,6 @@ class Vocabulary_Builder(object):
     def __init__(self, vocabulary_dict = {}):
         super(Vocabulary_Builder, self).__init__()
         self.vocabulary_dict = vocabulary_dict
-        self.save_vocabulary_path = './work/dict.txt'
         self.start_tag = '<P>'
         self.end_tag = '</P>'
 
@@ -34,23 +33,26 @@ class Vocabulary_Builder(object):
         self.sorted_dict = sorted(self.vocabulary_dict.items(), key=operator.itemgetter(1), reverse=True)
 
         # 3. saving dictionary to a txt file
-    def save(self):
+    def save(self, saving_path):
         print "saving..."
-        with open(self.save_vocabulary_path, 'wb') as f:
+        with open(saving_path, 'wb') as f:
             for char, freq in self.sorted_dict:
                 f.write(char)
                 f.write('\n')
         print "done"
 
 if __name__ == '__main__':
-    # import argparse
-    #
-    # parser = argparse.ArgumentParser()
-    # parser.add_argument('-c', '--corpus-path', required=True)
-    # parser.add_argument('-d', '--dictionary-path')
+    import argparse
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-c', '--corpus-path', required=True)
+    parser.add_argument('-d', '--dictionary-path')
+    args = parser.parse_args()
 
-    train_set_path = sys.argv[1]
+    train_set_path = args.corpus_path
+    saving_path = args.dictionary_path
 
     vocab_builder = Vocabulary_Builder()
 
     vocab_builder.read_in(train_set_path)
+    vocab_builder.save(saving_path)
