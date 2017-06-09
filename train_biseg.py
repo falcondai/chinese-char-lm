@@ -69,20 +69,21 @@ def build_model(token_ids, seq_lens, vocab_size, embed_dim, rnn_dim):
                                             num_proj_shards=None, 
                                             forget_bias=1.0, 
                                             state_is_tuple=True, 
-                                            activation=tf.tanh)
+                                            activation=tf.tanh,
+                                            reuse = False)
 
 
     output, final_state = tf.nn.bidirectional_dynamic_rnn(cell_fw=forward_cell, 
-                                                    cell_bw=backward_cell, 
-                                                    inputs=rnn_input, 
-                                                    sequence_length=seq_lens, 
-                                                    initial_state_fw=None, 
-                                                    initial_state_bw=None, 
-                                                    dtype=tf.float32, 
-                                                    parallel_iterations=None, 
-                                                    swap_memory=False, 
-                                                    time_major=False, 
-                                                    scope='blstm')
+                                                        cell_bw=backward_cell, 
+                                                        inputs=rnn_input, 
+                                                        sequence_length=seq_lens, 
+                                                        initial_state_fw=None, 
+                                                        initial_state_bw=None, 
+                                                        dtype=tf.float32, 
+                                                        parallel_iterations=None, 
+                                                        swap_memory=False, 
+                                                        time_major=False, 
+                                                        scope='blstm')
 
     output_fw, output_bw = output
 
