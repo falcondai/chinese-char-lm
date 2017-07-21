@@ -19,25 +19,42 @@ def generate_glyphs(ids_val, lines_val):
             glyphs[i, j] = render_glyph(token.decode('utf8'))
     return glyphs
 
-def build_model(token_ids, glyphs, seq_lens, vocab_size, n_oov_buckets, embed_dim, rnn_dim):
+def build_model(token_ids, glyphs, seq_lens, vocab_size, n_oov_buckets, embed_dim, rnn_dim, train_test_mode = 'train', id_glyph_switch = 'mix'):
     # encoder
     bs = tf.size(seq_lens)
     glyph_unaware = tf.contrib.layers.embed_sequence(token_ids, vocab_size + n_oov_buckets, embed_dim)
-
     # glyph-aware
     glyphs = tf.reshape(glyphs, (-1, 24, 24, 1))
     # linear glyph embedder
     net = linear.build_model(glyphs, embed_dim)
 
     glyph_aware = tf.reshape(net, (bs, -1, embed_dim))
+    output_vocab_size = 2000
+    in_vocab = tf.expand_dims(tf.cast(tf.less(token_ids, vocab_size), tf.float32), -1)
+    glyph_unk = tf.Variable(np.random.rand(1, embed_dim), name = 'glyph_unk', dtype = tf.float32)
 
-    in_vocab = tf.expand_dims(tf.cast(tf.less(token_ids, vocab_size), 'float'), -1)
+    glyph_unk_pad = (1 - in_vocab) * (tf.zeros_like(glyph_unaware) + glyph_unk)
     # msr-m1, msr-m0, msr-l0
     # rnn_input = glyph_unaware + in_vocab * glyph_aware
     # msr-i0
     # rnn_input = glyph_unaware + 0. * glyph_aware
     # msr-l1, msr-c2
-    rnn_input = 0. * glyph_unaware + glyph_aware
+    rnn_input = None
+    if id_glyph_switch == 'mix':
+        if train_test_mode == 'train':
+
+            rnn_input = glyph_unaware + in_vocab * glyph_aware + (1 - in_vocab) * glyph_unk_pad
+        else:
+            rnn_input = glyph_unaware + glyph_aware
+
+    elif id_glyph_switch == 'id':
+        rnn_input = glyph_unaware
+
+    elif id_glyph_switch == 'glyph':
+        if train_test_mode == 'train':
+            rnn_input = in_vocab * glyph_aware + (1 - in_vocab) * glyph_unk_pad
+        else:
+            rnn_input = glyph_aware
 
     # rnn
     cell = tf.contrib.rnn.GRUBlockCell(rnn_dim)
@@ -47,14 +64,14 @@ def build_model(token_ids, glyphs, seq_lens, vocab_size, n_oov_buckets, embed_di
     decoder_input = tf.reshape(rnn_output, (-1, rnn_dim))
     token_logit = tf.contrib.layers.fully_connected(
         inputs=decoder_input,
-        num_outputs=vocab_size + n_oov_buckets,
+        num_outputs=output_vocab_size,
         biases_initializer=tf.zeros_initializer(),
         weights_initializer=tf.contrib.layers.xavier_initializer(),
         activation_fn=None,
         scope='token_logit',
     )
 
-    seq_logits = tf.reshape(token_logit, (bs, -1, vocab_size + n_oov_buckets))
+    seq_logits = tf.reshape(token_logit, (bs, -1, output_vocab_size))
 
     return seq_logits, final_state
 
@@ -76,7 +93,7 @@ def build_input_pipeline(corpus_path, vocabulary, batch_size, shuffle, allow_sma
 
     return ids, seq_lens, lines
 
-def train(train_split_path, val_split_path, dict_path, log_dir, batch_size, vocab_size, n_oov_buckets, initial_lr, lr_decay_steps, lr_decay_rate, lr_staircase, no_grad_clip, clip_norm, opt_method, momentum, val_interval, save_interval, summary_interval):
+def train(train_split_path, val_split_path, dict_path, log_dir, batch_size, vocab_size, n_oov_buckets, initial_lr, lr_decay_steps, lr_decay_rate, lr_staircase, no_grad_clip, clip_norm, opt_method, momentum, val_interval, save_interval, summary_interval, id_glyph_switch):
     assert vocab_size >= 2, 'vocabulary has to include at least start_tag and end_tag'
     assert n_oov_buckets > 0, 'there must be at least 1 OOV bucket'
 
@@ -96,12 +113,12 @@ def train(train_split_path, val_split_path, dict_path, log_dir, batch_size, voca
     embed_dim, rnn_dim = 300, 128
     glyph_ph = tf.placeholder('float', shape=[None, None, 24, 24], name='glyph')
     with tf.variable_scope('model'):
-        seq_logits, final_state = build_model(ids[:, :-1], glyph_ph[:, :-1], seq_lens, vocab_size, n_oov_buckets, embed_dim, rnn_dim)
+        seq_logits, final_state = build_model(ids[:, :-1], glyph_ph[:, :-1], seq_lens, vocab_size, n_oov_buckets, embed_dim, rnn_dim, 'train', id_glyph_switch)
 
     # validation
     val_glyph_ph = tf.placeholder('float', [None, None, 24, 24], name='val_glyph')
     with tf.variable_scope('model', reuse=True):
-        val_seq_logits, val_final_state = build_model(val_ids[:, :-1], val_glyph_ph[:, :-1], val_seq_lens, vocab_size, n_oov_buckets, embed_dim, rnn_dim)
+        val_seq_logits, val_final_state = build_model(val_ids[:, :-1], val_glyph_ph[:, :-1], val_seq_lens, vocab_size, n_oov_buckets, embed_dim, rnn_dim, 'test', id_glyph_switch)
 
     # loss
     mask = tf.sequence_mask(seq_lens, dtype=tf.float32)
@@ -138,8 +155,8 @@ def train(train_split_path, val_split_path, dict_path, log_dir, batch_size, voca
     tf.summary.scalar('model/gradient_norm', grad_norm)
     tf.summary.scalar('model/clipped_gradient_norm', clipped_norm)
     tf.summary.scalar('model/variable_norm', var_norm)
-    for g, v in zip(normed_grads, trainable_vars):
-        tf.summary.histogram(v.name, g)
+    # for g, v in zip(normed_grads, trainable_vars):
+    #     tf.summary.histogram(v.name, g)
 
     train_summary = tf.summary.merge_all()
 
@@ -248,7 +265,8 @@ if __name__ == '__main__':
     parser.add_argument('--save-interval', type=int, default=32, help='interval of checkpoints')
     parser.add_argument('--summary-interval', type=int, default=32, help='interval of summary')
     parser.add_argument('--val-interval', type=int, default=64, help='interval of evaluation on the validation split')
-
+    parser.add_argument('--id_glyph_switch', type=str, default='id', help='decide which type of input to use')
+    
     args = parser.parse_args()
 
-    train(args.train_corpus, args.val_corpus, args.dictionary, args.log_dir, args.batch_size, args.vocab_size, args.n_oov_buckets, args.initial_lr, args.lr_decay_steps, args.lr_decay_rate, args.lr_staircase, args.no_grad_clip, args.clip_norm, args.optimizer, args.momentum, args.val_interval, args.save_interval, args.summary_interval)
+    train(args.train_corpus, args.val_corpus, args.dictionary, args.log_dir, args.batch_size, args.vocab_size, args.n_oov_buckets, args.initial_lr, args.lr_decay_steps, args.lr_decay_rate, args.lr_staircase, args.no_grad_clip, args.clip_norm, args.optimizer, args.momentum, args.val_interval, args.save_interval, args.summary_interval, args.id_glyph_switch)
