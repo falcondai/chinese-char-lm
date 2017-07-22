@@ -8,7 +8,7 @@ import os, glob
 
 from train_id_cnn_lm import build_input_pipeline, build_model, generate_glyphs
 
-def test(test_split_path, dict_path, log_dir, batch_size, vocab_size, n_oov_buckets, print_interval):
+def test(test_split_path, dict_path, log_dir, batch_size, vocab_size, n_oov_buckets, print_interval, id_glyph_switch):
     # token to token-id lookup
     vocabulary = tf.contrib.lookup.string_to_index_table_from_file(dict_path, num_oov_buckets=n_oov_buckets, vocab_size=vocab_size)
 
@@ -21,7 +21,7 @@ def test(test_split_path, dict_path, log_dir, batch_size, vocab_size, n_oov_buck
     glyph_ph = tf.placeholder('float', shape=[None, None, 24, 24], name='glyph')
     embed_dim, rnn_dim = 300, 128
     with tf.variable_scope('model'):
-        seq_logits, final_state = build_model(ids[:, :-1], glyph_ph[:, :-1], seq_lens, vocab_size, n_oov_buckets, embed_dim, rnn_dim)
+        seq_logits, final_state = build_model(ids[:, :-1], glyph_ph[:, :-1], seq_lens, vocab_size, n_oov_buckets, embed_dim, rnn_dim, 'test', id_glyph_switch)
 
     # loss
     mask = tf.sequence_mask(seq_lens, dtype=tf.float32)
@@ -95,7 +95,9 @@ if __name__ == '__main__':
     parser.add_argument('-t', '--test-corpus', default='work/test.txt', help='path to the test split')
     parser.add_argument('--dictionary', default='work/dict.txt', help='path to the dictionary file')
     parser.add_argument('--print-interval', type=int, default=16, help='interval of printing minibatch evaluation results')
+    parser.add_argument('--id_glyph_switch', type=str, default='mix', help='id cnn embedder switch')
 
     args = parser.parse_args()
 
-    test(args.test_corpus, args.dictionary, args.log_dir, args.batch_size, args.vocab_size, args.n_oov_buckets, args.print_interval)
+    test(args.test_corpus, args.dictionary, args.log_dir, args.batch_size, args.vocab_size, args.n_oov_buckets, args.print_interval, args.id_glyph_switch)
+
