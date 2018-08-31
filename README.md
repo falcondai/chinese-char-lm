@@ -19,10 +19,11 @@ Dai, Falcon Z., and Zheng Cai. "Glyph-aware Embedding of Chinese Characters." EM
 
 - We used Google Noto font for all of our experiments. Download Google Noto Simplified Chinese fonts (https://www.google.com/get/noto/#sans-hans). Unzip it under the project directory. It is needed to render the glyphs.
 - Requires Tensorflow v1.1 and Python 2.7.x
+- Clone the repo and check out a particular branch or a specific commit with `$ git checkout <branch-name or git-tag>`
 
 # replication
 
-In favor of replicability, we git-tagged the original git commits we used to obtain the published figures.  Please use the issues page to contact us with code issues so more people can benefit from the conversations.
+In favor of replicability, we git-tagged the original git commits we used to obtain the published figures. Please see the [release](https://github.com/falcondai/chinese-char-lm/releases). Please use the issues page to contact us with code issues so more people can benefit from the conversations.
 
 # authors
 Falcon Dai (dai@ttic.edu)
