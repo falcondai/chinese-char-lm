@@ -23,7 +23,7 @@ Dai, Falcon Z., and Zheng Cai. "Glyph-aware Embedding of Chinese Characters." EM
 
 # replication
 
-In favor of replicability, we git-tagged the original git commits we used to obtain the published figures. Please see the [release](https://github.com/falcondai/chinese-char-lm/releases). Please use the issues page to contact us with code issues so more people can benefit from the conversations.
+In favor of replicability, we git-tagged the original git commits we used to obtain the published figures. Please see the [release](https://github.com/falcondai/chinese-char-lm/releases) for a complete list of git tags (compare with the model names in the paper). Please use the issues page to contact us with code issues so more people can benefit from the conversations.
 
 # authors
 Falcon Dai (dai@ttic.edu)
